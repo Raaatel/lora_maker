@@ -1,0 +1,35 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# Training data & outputs (large files)
+data/jobs/
+data/db/
+
+# Models (too large for git)
+kohya-sd-scripts/
+*.safetensors
+*.ckpt
+*.pt
+
+# Node
+node_modules/
+electron/node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log

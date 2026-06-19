@@ -1,0 +1,43 @@
+# 그림체 복사 (Style LoRA)
+# 작화 스타일, 색감, 선 특성을 학습
+
+preprocess:
+  skip_preprocess: true  # 그림체는 전체 이미지 사용 (얼굴 크롭 안 함)
+  resize_mode: "crop"
+
+caption:
+  method: "wd-tagger"
+  wd_tagger_threshold: 0.30
+  # 스타일 캡션에서 제외할 태그 - 스타일 자체를 묘사하는 태그는 제거해야
+  # 모델이 트리거 워드에 스타일을 연결함
+  exclude_tags:
+    - "solo"
+    - "1girl"
+    - "1boy"
+
+training:
+  # LoRA 크기 - 스타일은 복잡한 패턴을 담아야 해서 크게
+  lora_rank: 64
+  lora_alpha: 32
+
+  # 학습률 - 스타일은 낮은 LR로 천천히 학습
+  unet_lr: 0.0001
+  text_encoder_lr: [0.00008, 0.00008]
+  network_train_unet_only: false  # TE도 학습해야 스타일이 잘 연결됨
+
+  # 에폭 & 반복 - 스타일은 충분히 학습해야 함
+  num_epochs: 15
+  target_steps: 3000  # 이미지 수 기반으로 auto_num_repeats가 계산
+
+  # 스케줄러 - cosine_with_restarts가 스타일에 효과적
+  lr_scheduler: "cosine_with_restarts"
+  lr_scheduler_num_cycles: 3
+  lr_warmup_steps: 150
+
+  # 노이즈 오프셋 - 스타일 명암 표현 개선
+  noise_offset: 0.1
+  min_snr_gamma: 5
+
+  # 캡션 셔플 - 스타일 태그들을 다양하게 조합
+  shuffle_caption: true
+  keep_tokens: 1

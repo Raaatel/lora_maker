@@ -1,0 +1,72 @@
+model:
+  base_model: ""
+  vae: "madebyollin/sdxl-vae-fp16-fix"
+
+preprocess:
+  target_size: 1024
+  face_margin_top: 2.0
+  face_margin_sides: 1.5
+  resize_mode: "crop"
+  pad_color: [255, 255, 255]
+  supported_formats: [".jpg", ".jpeg", ".png", ".webp"]
+  skip_preprocess: false
+
+caption:
+  method: "wd-tagger"
+  trigger_word: ""
+  wd_tagger_model: "SmilingWolf/wd-swinv2-tagger-v3"
+  wd_tagger_threshold: 0.35
+  blip2_model: "Salesforce/blip2-opt-2.7b"
+  exclude_tags: []
+
+training:
+  trigger_word: ""
+  resolution: 1024
+  train_batch_size: 1
+  num_epochs: 10
+  unet_lr: 0.0001
+  text_encoder_lr: [0.00008, 0.00008]
+  network_train_unet_only: false
+  lr_scheduler: "cosine_with_restarts"
+  lr_scheduler_num_cycles: 1
+  lr_warmup_steps: 100
+  lora_rank: 32
+  lora_alpha: 16
+  gradient_accumulation_steps: 1
+  mixed_precision: "fp16"
+  seed: 42
+  save_every_n_epochs: 1
+  num_repeats: 10
+  auto_num_repeats: true
+  target_steps: 2000
+  gradient_checkpointing: true
+  use_8bit_adam: true
+  max_grad_norm: 1.0
+  dataloader_num_workers: 0
+  min_snr_gamma: 5
+  noise_offset: 0.05
+  noise_offset_type: "Original"
+  clip_skip: 1
+  sdpa: true
+  enable_bucket: true
+  bucket_reso_steps: 64
+  min_bucket_reso: 256
+  max_bucket_reso: 2048
+  shuffle_caption: true
+  keep_tokens: 1
+
+inference:
+  prompt: ""
+  negative_prompt: "lowres, bad anatomy, worst quality, low quality, blurry"
+  num_images: 4
+  guidance_scale: 7.5
+  num_inference_steps: 30
+  seed: 42
+  lora_scale: 0.8
+
+vastai:
+  api_key: ""
+  gpu_type: "RTX 3090"
+  min_vram_gb: 20
+  docker_image: "vastai/pytorch:2.1.0-cuda12.1-py3.10"
+  disk_space_gb: 80

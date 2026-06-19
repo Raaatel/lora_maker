@@ -1,0 +1,130 @@
+"""Validation API — weight analysis and optional inference test."""
+
+from pathlib import Path
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from typing import Optional
+
+from server import database as db
+from server.services.validator import analyze_weights, run_inference_test
+
+router = APIRouter(tags=["validation"])
+
+# ── Standalone (no project) endpoints ─────────────────────────────────────────
+
+class FileValidateRequest(BaseModel):
+    file_path: str
+
+class FileInferenceRequest(BaseModel):
+    file_path: str
+    base_model: str
+    prompt: str = "masterpiece, best quality, 1girl, portrait"
+    trigger_word: str = ""
+    seed: int = 42
+    steps: int = 20
+    width: int = 512
+    height: int = 512
+
+@router.post("/api/validate/file")
+async def validate_file(body: FileValidateRequest):
+    """Analyze weights of any .safetensors file by path."""
+    result = analyze_weights(body.file_path)
+    return JSONResponse(result)
+
+@router.post("/api/validate/inference-file")
+async def validate_inference_file(body: FileInferenceRequest):
+    """Generate before/after images for any .safetensors file."""
+    result = await run_inference_test(
+        checkpoint_path=body.file_path,
+        base_model_path=body.base_model,
+        prompt=body.prompt,
+        trigger_word=body.trigger_word,
+        seed=body.seed,
+        steps=body.steps,
+        width=body.width,
+        height=body.height,
+    )
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+    return JSONResponse(result)
+
+# ── Per-project checkpoint endpoints ──────────────────────────────────────────
+
+_project_router = APIRouter(prefix="/api/projects/{project_id}/validate", tags=["validation"])
+DATA_DIR = Path("data/jobs")
+
+# Cache validation results in memory (project_id -> epoch -> result)
+_cache: dict = {}
+
+
+@_project_router.get("/weight/{epoch}")
+async def validate_weight(project_id: str, epoch: int):
+    """Fast weight analysis for a specific checkpoint epoch."""
+    project = await db.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    cache_key = (project_id, epoch, "weight")
+    if cache_key in _cache:
+        return JSONResponse(_cache[cache_key])
+
+    chk = await db.get_checkpoint(project_id, epoch)
+    if not chk:
+        raise HTTPException(status_code=404, detail="Checkpoint not found")
+
+    file_path = chk.get("file_path")
+    if not file_path or not Path(file_path).exists():
+        raise HTTPException(status_code=404, detail="Checkpoint file missing")
+
+    result = analyze_weights(file_path)
+    _cache[cache_key] = result
+    return JSONResponse(result)
+
+
+class InferenceRequest(BaseModel):
+    epoch: int
+    base_model: str
+    prompt: str = "masterpiece, best quality, 1girl, portrait"
+    seed: int = 42
+    steps: int = 20
+    width: int = 512
+    height: int = 512
+
+
+@_project_router.post("/inference")
+async def validate_inference(project_id: str, body: InferenceRequest):
+    """
+    Run a before/after inference test with the LoRA checkpoint.
+    Returns base64 PNG images. Can take 30-120s depending on hardware.
+    """
+    project = await db.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    chk = await db.get_checkpoint(project_id, body.epoch)
+    if not chk:
+        raise HTTPException(status_code=404, detail="Checkpoint not found")
+
+    file_path = chk.get("file_path")
+    if not file_path or not Path(file_path).exists():
+        raise HTTPException(status_code=404, detail="Checkpoint file missing")
+
+    result = await run_inference_test(
+        checkpoint_path=file_path,
+        base_model_path=body.base_model,
+        prompt=body.prompt,
+        trigger_word=project.get("trigger_word", ""),
+        seed=body.seed,
+        steps=body.steps,
+        width=body.width,
+        height=body.height,
+    )
+
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+
+    return JSONResponse(result)
+
+# Register project-scoped routes onto the main router
+router.include_router(_project_router)

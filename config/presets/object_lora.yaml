@@ -1,0 +1,30 @@
+# 사물/개념 LoRA
+# 특정 오브젝트, 아이템, 개념을 학습
+
+preprocess:
+  skip_preprocess: true  # 사물은 얼굴 감지 불필요
+  resize_mode: "crop"
+
+caption:
+  method: "wd-tagger"
+  wd_tagger_threshold: 0.30
+
+training:
+  lora_rank: 32
+  lora_alpha: 16
+
+  unet_lr: 0.0001
+  text_encoder_lr: [0.00005, 0.00005]
+  network_train_unet_only: false
+
+  num_epochs: 10
+  target_steps: 1500
+
+  lr_scheduler: "cosine"
+  lr_warmup_steps: 50
+
+  noise_offset: 0.05
+  min_snr_gamma: 5
+
+  shuffle_caption: true
+  keep_tokens: 1

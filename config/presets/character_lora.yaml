@@ -1,0 +1,32 @@
+# 캐릭터 LoRA
+# 특정 캐릭터의 외형(의상, 머리 색/스타일, 특징)을 학습
+
+preprocess:
+  skip_preprocess: false
+  face_margin_top: 1.8
+  face_margin_sides: 1.6
+
+caption:
+  method: "wd-tagger"
+  wd_tagger_threshold: 0.35
+
+training:
+  lora_rank: 32
+  lora_alpha: 16
+
+  unet_lr: 0.0001
+  text_encoder_lr: [0.00005, 0.00005]
+  network_train_unet_only: false
+
+  num_epochs: 10
+  target_steps: 2000
+
+  lr_scheduler: "cosine_with_restarts"
+  lr_scheduler_num_cycles: 1
+  lr_warmup_steps: 100
+
+  noise_offset: 0.05
+  min_snr_gamma: 5
+
+  shuffle_caption: true
+  keep_tokens: 1
