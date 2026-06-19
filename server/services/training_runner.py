@@ -134,10 +134,7 @@ def run(
 
         # Noise offset
         if train_cfg.get("noise_offset"):
-            cmd.extend([
-                "--noise_offset", str(train_cfg["noise_offset"]),
-                "--noise_offset_type", train_cfg.get("noise_offset_type", "Original"),
-            ])
+            cmd.extend(["--noise_offset", str(train_cfg["noise_offset"])])
 
         # Cache latents
         cmd.append("--cache_latents")

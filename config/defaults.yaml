@@ -45,7 +45,6 @@ training:
   dataloader_num_workers: 0
   min_snr_gamma: 5
   noise_offset: 0.05
-  noise_offset_type: "Original"
   clip_skip: 1
   sdpa: true
   enable_bucket: true
