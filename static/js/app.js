@@ -1408,8 +1408,17 @@ function browsePath(targetInputId, accept = '') {
     return;
   }
 
-  // Web fallback: browser cannot expose full paths — ask user to type
-  toast('웹 브라우저에서는 전체 경로를 직접 입력해주세요 (Electron 앱에서는 자동으로 됩니다)', 'info', 4000);
+  // Web mode: call backend /api/browse to open a native tkinter dialog
+  api('POST', '/api/browse', { mode: 'file', accept, title: '파일 선택' })
+    .then(res => {
+      if (res.path) {
+        const target = $(_browseTargetId);
+        if (target) target.value = res.path;
+      }
+    })
+    .catch(() => {
+      toast('파일 경로를 직접 입력해주세요', 'info');
+    });
 }
 
 function onBrowseFile(event) {

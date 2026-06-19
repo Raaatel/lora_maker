@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from server.database import init_db
 from server.services.training_manager import TrainingManager
 from server.services.websocket_manager import ConnectionManager
-from server.routers import pages, api_projects, api_upload, api_checkpoints, api_vastai, ws, api_validation
+from server.routers import pages, api_projects, api_upload, api_checkpoints, api_vastai, ws, api_validation, api_browse
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -45,6 +45,7 @@ def create_app() -> FastAPI:
     app.include_router(api_vastai.router)
     app.include_router(ws.router)
     app.include_router(api_validation.router)
+    app.include_router(api_browse.router)
 
     @app.on_event("startup")
     async def on_startup():
