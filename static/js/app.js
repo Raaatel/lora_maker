@@ -797,10 +797,10 @@ function renderWizardStep(step) {
 
 function buildStep1() {
   const types = [
-    { key: 'style', emoji: '🎨', title: '그림체', desc: '특정 작가나 스타일의 화풍 전체를 복사', specs: ['Rank 64', 'Dual TE LR', '15 에폭'] },
-    { key: 'character', emoji: '👤', title: '캐릭터', desc: '특정 캐릭터의 외형과 의상을 학습', specs: ['Rank 32', 'TE 포함', '10 에폭'] },
-    { key: 'face', emoji: '😊', title: '얼굴', desc: '특정 인물의 얼굴 특징을 세밀하게 학습', specs: ['Rank 16', '얼굴 크롭', '10 에폭'] },
-    { key: 'object', emoji: '📦', title: '사물/개념', desc: '특정 오브젝트, 아이템, 개념을 학습', specs: ['Rank 32', '전체 이미지', '10 에폭'] },
+    { key: 'style', emoji: '🎨', title: '그림체', desc: '특정 작가나 스타일의 화풍 전체를 복사', specs: ['Rank 64', 'Dual TE LR', '15 에폭', '최소 50장+'] },
+    { key: 'character', emoji: '👤', title: '캐릭터', desc: '특정 캐릭터의 외형과 의상을 학습', specs: ['Rank 32', 'TE 포함', '10 에폭', '최소 20장+'] },
+    { key: 'face', emoji: '😊', title: '얼굴', desc: '특정 인물의 얼굴 특징을 세밀하게 학습', specs: ['Rank 16', '얼굴 크롭', '10 에폭', '최소 15장+'] },
+    { key: 'object', emoji: '📦', title: '사물/개념', desc: '특정 오브젝트, 아이템, 개념을 학습', specs: ['Rank 32', '전체 이미지', '10 에폭', '최소 10장+'] },
   ];
 
   return `
@@ -850,7 +850,7 @@ function buildStep3() {
   return `
     <div style="margin-bottom:16px;">
       <div style="font-size:15px;font-weight:600;margin-bottom:4px;">학습 이미지 업로드</div>
-      <div style="font-size:12px;color:var(--text-muted);">JPG, PNG, WEBP 파일을 업로드하세요. 최소 20장 이상 권장</div>
+      <div style="font-size:12px;color:var(--text-muted);">JPG, PNG, WEBP 파일을 업로드하세요. ${{style:'최소 50장+ 권장 (그림체)',character:'최소 20장+ 권장 (캐릭터)',face:'최소 15장+ 권장 (얼굴)',object:'최소 10장+ 권장 (사물)'}[state.wizard.lora_type]||'최소 20장 이상 권장'}</div>
     </div>
     <div class="upload-zone" id="wizardUploadZone" onclick="$('wizardFileInput').click()">
       <div class="upload-zone-icon">📁</div>
@@ -1389,26 +1389,31 @@ async function runStandaloneInference() {
 
 // ── File path browser helper ──────────────────────────────────────────────────
 let _browseTargetId = null;
-let _browseAccept = '';
 
 function browsePath(targetInputId, accept = '') {
   _browseTargetId = targetInputId;
-  _browseAccept = accept;
-  const inp = $('browseFileInput');
-  inp.accept = accept;
-  inp.click();
+
+  // Electron: use native file dialog to get the full path
+  if (window.electronAPI?.openFile) {
+    const extList = accept.split(',').map(e => e.trim().replace(/^\./, ''));
+    const filters = extList.length
+      ? [{ name: 'Model Files', extensions: extList }, { name: 'All Files', extensions: ['*'] }]
+      : [{ name: 'All Files', extensions: ['*'] }];
+
+    window.electronAPI.openFile(filters).then(fullPath => {
+      if (!fullPath) return;
+      const target = $(_browseTargetId);
+      if (target) target.value = fullPath;
+    });
+    return;
+  }
+
+  // Web fallback: browser cannot expose full paths — ask user to type
+  toast('웹 브라우저에서는 전체 경로를 직접 입력해주세요 (Electron 앱에서는 자동으로 됩니다)', 'info', 4000);
 }
 
 function onBrowseFile(event) {
-  const file = event.target.files[0];
-  if (!file || !_browseTargetId) return;
-  // Fill the target input with the filename as a hint
-  const target = $(_browseTargetId);
-  if (target && !target.value) {
-    target.value = file.name;
-    target.placeholder = file.name;
-  }
-  toast(`선택: ${file.name} — 전체 경로를 직접 입력하세요`, 'info');
+  // Legacy handler kept for <input type="file"> — not used in Electron mode
   event.target.value = '';
 }
 

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, Menu, Tray, dialog } = require('electron');
+const { app, BrowserWindow, shell, Menu, Tray, dialog, ipcMain } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -154,6 +154,15 @@ function buildMenu() {
   ];
   return Menu.buildFromTemplate(template);
 }
+
+// ── IPC: native file dialog ─────────────────────────────────────────────────
+ipcMain.handle('dialog:openFile', async (_event, { filters } = {}) => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    filters: filters || [{ name: 'All Files', extensions: ['*'] }],
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
