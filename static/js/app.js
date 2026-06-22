@@ -1253,6 +1253,37 @@ function showValidatorView() {
             <label class="form-label">테스트 프롬프트</label>
             <input class="form-input" id="standalonePrompt" value="masterpiece, best quality, 1girl, portrait, detailed">
           </div>
+          <!-- 파라미터 -->
+          <div class="gen-params-grid" style="margin-bottom:8px;">
+            <div class="form-group">
+              <label class="form-label">스케줄러</label>
+              <select class="form-input form-select" id="standaloneScheduler">
+                <option value="euler">Euler</option>
+                <option value="euler_a">Euler Ancestral</option>
+                <option value="dpm++_2m" selected>DPM++ 2M</option>
+                <option value="dpm++_2m_karras">DPM++ 2M Karras</option>
+                <option value="ddim">DDIM</option>
+                <option value="heun">Heun</option>
+                <option value="lms">LMS</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">스텝 수</label>
+              <input class="form-input" id="standaloneSteps" type="number" min="1" max="150" value="20">
+            </div>
+            <div class="form-group">
+              <label class="form-label">CFG Scale</label>
+              <input class="form-input" id="standaloneCfg" type="number" min="1" max="20" step="0.5" value="7">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Seed</label>
+              <input class="form-input" id="standaloneSeed" type="number" value="42">
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:12px;">
+            <label class="form-label">네거티브 프롬프트 <span style="opacity:.6;font-weight:400">(선택)</span></label>
+            <input class="form-input" id="standaloneNeg" placeholder="low quality, bad anatomy, watermark">
+          </div>
           <button class="btn btn-primary btn-sm" id="standaloneRunBtn" onclick="runStandaloneInference()">🖼️ 이미지 생성 테스트</button>
           <div id="standaloneImages" style="margin-top:16px;"></div>
         </div>
@@ -1392,7 +1423,17 @@ async function runStandaloneInference() {
     const r = await fetch('/api/validate/inference-file', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ file_path: loraPath, base_model: baseModel, prompt, trigger_word: trigger }),
+      body: JSON.stringify({
+        file_path: loraPath,
+        base_model: baseModel,
+        prompt,
+        negative_prompt: $('standaloneNeg')?.value.trim() || '',
+        trigger_word: trigger,
+        steps: parseInt($('standaloneSteps')?.value) || 20,
+        cfg_scale: parseFloat($('standaloneCfg')?.value) || 7.0,
+        scheduler: $('standaloneScheduler')?.value || 'euler',
+        seed: parseInt($('standaloneSeed')?.value) || 42,
+      }),
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.detail || '실패');
@@ -1438,6 +1479,175 @@ async function runStandaloneInference() {
 }
 
 
+
+// ── Standalone Image Generator View ──────────────────────────────────────────
+function showImageGenView() {
+  state.currentProjectId = null;
+  document.querySelectorAll('.project-item').forEach(i => i.classList.remove('active'));
+
+  $('mainContent').innerHTML = `
+    <div class="validator-view">
+      <div class="validator-header">
+        <div class="validator-title">🎨 이미지 생성기</div>
+        <div class="validator-sub">LoRA를 적용해 SDXL 이미지를 생성하고 before/after를 비교합니다</div>
+      </div>
+
+      <div class="validator-body">
+        <div class="gen-config-card">
+          <!-- 모델 설정 -->
+          <div class="gen-section-title">📁 모델</div>
+          <div class="form-group">
+            <label class="form-label">베이스 모델</label>
+            <div class="path-input-row">
+              <input class="form-input" id="genBaseModel" placeholder="D:/Models/animagine-xl.safetensors">
+              <button class="btn-browse" onclick="browsePath('genBaseModel','.safetensors,.ckpt')" title="파일 찾아보기">📁</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">LoRA 파일</label>
+            <div class="path-input-row">
+              <input class="form-input" id="genLoraFile" placeholder="D:/LoRA/my_lora.safetensors">
+              <button class="btn-browse" onclick="browsePath('genLoraFile','.safetensors,.ckpt')" title="파일 찾아보기">📁</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">트리거 워드 <span style="opacity:.6;font-weight:400">(선택)</span></label>
+            <input class="form-input" id="genTrigger" placeholder="myartstyle">
+          </div>
+
+          <div class="gen-divider"></div>
+
+          <!-- 프롬프트 -->
+          <div class="gen-section-title">✏️ 프롬프트</div>
+          <div class="form-group">
+            <label class="form-label">포지티브 프롬프트</label>
+            <textarea class="form-input gen-textarea" id="genPrompt" rows="3" placeholder="masterpiece, best quality, 1girl, portrait, detailed">masterpiece, best quality, 1girl, portrait, detailed</textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">네거티브 프롬프트</label>
+            <textarea class="form-input gen-textarea" id="genNeg" rows="2" placeholder="low quality, bad anatomy, watermark, blurry"></textarea>
+          </div>
+
+          <div class="gen-divider"></div>
+
+          <!-- 파라미터 -->
+          <div class="gen-section-title">⚙️ 파라미터</div>
+          <div class="gen-params-grid">
+            <div class="form-group">
+              <label class="form-label">스케줄러</label>
+              <select class="form-input form-select" id="genScheduler">
+                <option value="euler">Euler</option>
+                <option value="euler_a">Euler Ancestral</option>
+                <option value="dpm++_2m" selected>DPM++ 2M</option>
+                <option value="dpm++_2m_karras">DPM++ 2M Karras</option>
+                <option value="ddim">DDIM</option>
+                <option value="heun">Heun</option>
+                <option value="lms">LMS</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">스텝 수</label>
+              <input class="form-input" id="genSteps" type="number" min="1" max="150" value="20">
+            </div>
+            <div class="form-group">
+              <label class="form-label">CFG Scale</label>
+              <input class="form-input" id="genCfg" type="number" min="1" max="20" step="0.5" value="7">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Seed <span style="opacity:.5;font-size:10px">(-1 = 랜덤)</span></label>
+              <input class="form-input" id="genSeed" type="number" value="42">
+            </div>
+          </div>
+
+          <button class="btn btn-primary" id="genRunBtn" onclick="runImageGen()" style="width:100%;margin-top:4px;">
+            🖼️ 생성 시작 (3가지 해상도)
+          </button>
+        </div>
+
+        <div id="genImages" style="margin-top:20px;"></div>
+      </div>
+    </div>
+  `;
+}
+
+async function runImageGen() {
+  const btn = $('genRunBtn');
+  const baseModel = $('genBaseModel')?.value.trim();
+  const loraFile  = $('genLoraFile')?.value.trim();
+  const prompt    = $('genPrompt')?.value.trim() || 'masterpiece, best quality, portrait';
+  const neg       = $('genNeg')?.value.trim() || '';
+  const trigger   = $('genTrigger')?.value.trim() || '';
+  const steps     = parseInt($('genSteps')?.value) || 20;
+  const cfg       = parseFloat($('genCfg')?.value) || 7.0;
+  const scheduler = $('genScheduler')?.value || 'euler';
+  const seedVal   = parseInt($('genSeed')?.value) ?? 42;
+  const seed      = seedVal === -1 ? Math.floor(Math.random() * 2147483647) : seedVal;
+
+  if (!baseModel) { toast('베이스 모델 경로를 입력하세요', 'error'); return; }
+  if (!loraFile)  { toast('LoRA 파일 경로를 입력하세요', 'error'); return; }
+
+  $('genImages').innerHTML = '<div class="val-loading">🖼️ 이미지 생성 중... 3가지 해상도 순서대로 진행 (1~3분 소요)</div>';
+  btn.disabled = true;
+  btn.textContent = '생성 중...';
+
+  try {
+    const r = await fetch('/api/validate/inference-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        file_path: loraFile,
+        base_model: baseModel,
+        prompt,
+        negative_prompt: neg,
+        trigger_word: trigger,
+        steps,
+        cfg_scale: cfg,
+        scheduler,
+        seed,
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || '실패');
+
+    const results = data.results || [];
+    if (!results.length) throw new Error('결과가 없습니다');
+
+    const cols = results.map(res => `
+      <div class="val-resolution-col">
+        <div class="val-resolution-header">
+          <span class="val-res-badge">${escHtml(res.size)}</span>
+          <span class="val-res-label">${escHtml(res.label)}</span>
+        </div>
+        <div class="val-compare-grid">
+          <div class="val-compare-card" onclick="openLightbox('data:image/png;base64,${res.before}', 'LoRA 없음 · ${escHtml(res.size)}')">
+            <div class="val-card-tag val-tag-before">Before</div>
+            <img src="data:image/png;base64,${res.before}" class="val-img" loading="lazy">
+            <div class="val-zoom-hint">🔍 클릭하여 확대</div>
+          </div>
+          <div class="val-compare-card" onclick="openLightbox('data:image/png;base64,${res.after}', 'LoRA 적용 · ${escHtml(res.size)}')">
+            <div class="val-card-tag val-tag-after">After</div>
+            <img src="data:image/png;base64,${res.after}" class="val-img" loading="lazy">
+            <div class="val-zoom-hint">🔍 클릭하여 확대</div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+
+    $('genImages').innerHTML = `
+      <div class="val-prompt-bar">
+        <span class="val-prompt-icon">💬</span>
+        <span class="val-prompt-text">${escHtml(data.prompt_used)}</span>
+      </div>
+      <div class="val-multi-resolution">${cols}</div>
+    `;
+  } catch (e) {
+    $('genImages').innerHTML = `<div class="val-error">❌ ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🖼️ 생성 시작 (3가지 해상도)';
+  }
+}
+
 // ── Lightbox ─────────────────────────────────────────────────────────────────
 function openLightbox(src, caption) {
   let lb = document.getElementById('imgLightbox');
@@ -1445,9 +1655,12 @@ function openLightbox(src, caption) {
     lb = document.createElement('div');
     lb.id = 'imgLightbox';
     lb.className = 'lightbox-overlay';
+    lb.addEventListener('click', function(e) {
+      if (e.target === lb || e.target.classList.contains('lightbox-backdrop')) closeLightbox();
+    });
     lb.innerHTML = `
-      <div class="lightbox-backdrop" onclick="closeLightbox()"></div>
-      <div class="lightbox-box">
+      <div class="lightbox-backdrop"></div>
+      <div class="lightbox-box" onclick="event.stopPropagation()">
         <div class="lightbox-caption" id="lbCaption"></div>
         <img id="lbImg" class="lightbox-img">
         <button class="lightbox-close" onclick="closeLightbox()">✕</button>

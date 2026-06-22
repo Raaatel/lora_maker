@@ -20,9 +20,12 @@ class FileInferenceRequest(BaseModel):
     file_path: str
     base_model: str
     prompt: str = "masterpiece, best quality, 1girl, portrait"
+    negative_prompt: str = ""
     trigger_word: str = ""
     seed: int = 42
     steps: int = 20
+    cfg_scale: float = 7.0
+    scheduler: str = "euler"
     width: int = 512
     height: int = 512
 
@@ -42,6 +45,9 @@ async def validate_inference_file(body: FileInferenceRequest):
         trigger_word=body.trigger_word,
         seed=body.seed,
         steps=body.steps,
+        cfg_scale=body.cfg_scale,
+        scheduler=body.scheduler,
+        negative_prompt=body.negative_prompt,
         width=body.width,
         height=body.height,
     )
@@ -90,8 +96,11 @@ class InferenceRequest(BaseModel):
     epoch: int
     base_model: str
     prompt: str = "masterpiece, best quality, 1girl, portrait"
+    negative_prompt: str = ""
     seed: int = 42
     steps: int = 20
+    cfg_scale: float = 7.0
+    scheduler: str = "euler"
     width: int = 512
     height: int = 512
 
@@ -121,6 +130,9 @@ async def validate_inference(project_id: str, body: InferenceRequest):
         trigger_word=project.get("trigger_word", ""),
         seed=body.seed,
         steps=body.steps,
+        cfg_scale=body.cfg_scale,
+        scheduler=body.scheduler,
+        negative_prompt=body.negative_prompt,
         width=body.width,
         height=body.height,
     )

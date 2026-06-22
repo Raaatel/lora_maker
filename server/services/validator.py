@@ -134,6 +134,9 @@ async def run_inference_test(
     trigger_word: str,
     seed: int = 42,
     steps: int = 20,
+    cfg_scale: float = 7.0,
+    scheduler: str = "euler",
+    negative_prompt: str = "",
     width: int = 512,
     height: int = 512,
 ) -> dict:
@@ -143,11 +146,13 @@ async def run_inference_test(
     """
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, _inference_blocking,
-        checkpoint_path, base_model_path, prompt, trigger_word, seed, steps, width, height)
+        checkpoint_path, base_model_path, prompt, trigger_word,
+        seed, steps, cfg_scale, scheduler, negative_prompt, width, height)
     return result
 
 
-def _inference_blocking(checkpoint_path, base_model_path, prompt, trigger_word, seed, steps, width, height):
+def _inference_blocking(checkpoint_path, base_model_path, prompt, trigger_word,
+                        seed, steps, cfg_scale, scheduler, negative_prompt, width, height):
     try:
         import torch
         from diffusers import StableDiffusionXLPipeline
@@ -213,6 +218,40 @@ def _inference_blocking(checkpoint_path, base_model_path, prompt, trigger_word, 
                 torch_dtype=dtype,
                 use_safetensors=True,
             ).to(device)
+        # Apply scheduler
+        _SCHEDULERS = {
+            "euler":          "EulerDiscreteScheduler",
+            "euler_a":        "EulerAncestralDiscreteScheduler",
+            "dpm++_2m":       "DPMSolverMultistepScheduler",
+            "dpm++_2m_karras":"DPMSolverMultistepScheduler_karras",
+            "ddim":           "DDIMScheduler",
+            "heun":           "HeunDiscreteScheduler",
+            "lms":            "LMSDiscreteScheduler",
+        }
+        from diffusers import (
+            EulerDiscreteScheduler, EulerAncestralDiscreteScheduler,
+            DPMSolverMultistepScheduler, DDIMScheduler,
+            HeunDiscreteScheduler, LMSDiscreteScheduler,
+        )
+        _sched_map = {
+            "euler":           EulerDiscreteScheduler,
+            "euler_a":         EulerAncestralDiscreteScheduler,
+            "dpm++_2m":        DPMSolverMultistepScheduler,
+            "dpm++_2m_karras": DPMSolverMultistepScheduler,
+            "ddim":            DDIMScheduler,
+            "heun":            HeunDiscreteScheduler,
+            "lms":             LMSDiscreteScheduler,
+        }
+        sched_cls = _sched_map.get(scheduler, EulerDiscreteScheduler)
+        karras = scheduler == "dpm++_2m_karras"
+        try:
+            if karras:
+                pipe.scheduler = sched_cls.from_config(pipe.scheduler.config, use_karras_sigmas=True)
+            else:
+                pipe.scheduler = sched_cls.from_config(pipe.scheduler.config)
+        except Exception:
+            pass  # keep default scheduler if swap fails
+
         pipe.set_progress_bar_config(disable=True)
     except Exception as e:
         return {"error": f"Failed to load base model: {e}"}
@@ -230,12 +269,16 @@ def _inference_blocking(checkpoint_path, base_model_path, prompt, trigger_word, 
         # ── Without LoRA ─────────────────────────────────────────────────
         try:
             gen = torch.Generator(device=device).manual_seed(seed)
-            img_before = pipe(
+            _kwargs = dict(
                 prompt=prompt,
                 num_inference_steps=steps,
+                guidance_scale=cfg_scale,
                 width=w, height=h,
                 generator=gen,
-            ).images[0]
+            )
+            if negative_prompt:
+                _kwargs["negative_prompt"] = negative_prompt
+            img_before = pipe(**_kwargs).images[0]
         except Exception as e:
             return {"error": f"Inference (without LoRA, {w}x{h}) failed: {e}"}
 
@@ -243,12 +286,16 @@ def _inference_blocking(checkpoint_path, base_model_path, prompt, trigger_word, 
         try:
             pipe.load_lora_weights(str(chk))
             gen2 = torch.Generator(device=device).manual_seed(seed)
-            img_after = pipe(
+            _kwargs2 = dict(
                 prompt=lora_prompt,
                 num_inference_steps=steps,
+                guidance_scale=cfg_scale,
                 width=w, height=h,
                 generator=gen2,
-            ).images[0]
+            )
+            if negative_prompt:
+                _kwargs2["negative_prompt"] = negative_prompt
+            img_after = pipe(**_kwargs2).images[0]
             pipe.unload_lora_weights()
         except Exception as e:
             return {"error": f"Inference (with LoRA, {w}x{h}) failed: {e}"}
