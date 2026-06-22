@@ -28,6 +28,11 @@ class FileInferenceRequest(BaseModel):
     scheduler: str = "euler"
     width: int = 512
     height: int = 512
+    resolutions: Optional[list] = None
+    gen_id: str = ""
+    lora_scale: float = 1.0
+    denoising_strength: float = 0.75
+    input_image_path: str = "" 
 
 @router.post("/api/validate/file")
 async def validate_file(body: FileValidateRequest):
@@ -50,6 +55,11 @@ async def validate_inference_file(body: FileInferenceRequest):
         negative_prompt=body.negative_prompt,
         width=body.width,
         height=body.height,
+        resolutions=body.resolutions,
+        gen_id=body.gen_id,
+        lora_scale=body.lora_scale,
+        denoising_strength=body.denoising_strength,
+        input_image_path=body.input_image_path,
     )
     if "error" in result:
         raise HTTPException(status_code=500, detail=result["error"])
@@ -144,3 +154,18 @@ async def validate_inference(project_id: str, body: InferenceRequest):
 
 # Register project-scoped routes onto the main router
 router.include_router(_project_router)
+
+
+# ── Generation progress / cancel ───────────────────────────────────────────────
+
+@router.get("/api/generate/progress/{gen_id}")
+async def get_gen_progress(gen_id: str):
+    from server.services.validator import _progress_store
+    return JSONResponse(_progress_store.get(gen_id, {"percent": 0, "label": "대기 중..."}))
+
+
+@router.post("/api/generate/cancel/{gen_id}")
+async def cancel_gen(gen_id: str):
+    from server.services.validator import _cancel_store
+    _cancel_store[gen_id] = True
+    return JSONResponse({"ok": True})

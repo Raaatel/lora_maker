@@ -51,3 +51,16 @@ async def browse_path(body: BrowseRequest):
 
     except Exception as e:
         return JSONResponse({"path": None, "error": str(e)})
+
+
+# ── Local image serving ──────────────────────────────────────────────────────
+import os, mimetypes
+from fastapi.responses import FileResponse, Response
+
+@router.get("/api/image")
+async def serve_local_image(path: str):
+    """Serve a local image file so the browser can display it (avoids file:// CORS)."""
+    if not path or not os.path.isfile(path):
+        return Response(status_code=404)
+    mime, _ = mimetypes.guess_type(path)
+    return FileResponse(path, media_type=mime or "image/png")

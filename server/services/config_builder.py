@@ -10,10 +10,12 @@ import yaml
 CONFIG_DIR = Path(__file__).resolve().parent.parent.parent / "config"
 
 PRESET_NAMES = {
-    "style": "style_lora",
-    "character": "character_lora",
-    "face": "face_lora",
-    "object": "object_lora",
+    "style":          "style_lora",
+    "style_balanced": "style_balanced_lora",
+    "style_copy":     "style_copy_lora",
+    "character":      "character_lora",
+    "face":           "face_lora",
+    "object":         "object_lora",
 }
 
 

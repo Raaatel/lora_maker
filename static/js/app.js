@@ -18,6 +18,21 @@ const state = {
 
 // ── DOM Refs ───────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
+
+// ── Persistent state — initialize early so all functions can use safely ──
+if (!window._genState) window._genState = { gallery: [], running: false, cancelled: false, currentGenId: null, queue: [], queueCounter: 0 };
+if (!window._genForm)  window._genForm  = {
+  baseModel: '', loraFile: '', prompt: 'masterpiece, best quality, portrait',
+  neg: '', trigger: '', scheduler: 'dpm++_2m', steps: 20, cfg: 7,
+  seed: -1, count: 1, loraScale: 1.0, denoising: 0.75,
+  res_1024: true, res_832x1216: false, res_1216x832: false, res_custom: false,
+  customW: 512, customH: 512, galleryHTML: null,
+};
+if (!window._valForm)  window._valForm  = {
+  loraPath: '', baseModel: '', prompt: 'masterpiece, best quality, 1girl, portrait, detailed',
+  neg: '', trigger: '', scheduler: 'dpm++_2m', steps: 20, cfg: 7,
+  seed: -1, loraScale: 1.0, denoising: 0.75, resultsHTML: null,
+};
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; };
 
 // ── Init ───────────────────────────────────────────────────────────────────
@@ -108,6 +123,8 @@ function renderSidebarItem(p) {
 }
 
 async function selectProject(id) {
+  _saveGenForm();
+  _saveValForm();
   state.currentProjectId = id;
   state.lossHistory = [];
   state.checkpoints = [];
@@ -797,11 +814,48 @@ function renderWizardStep(step) {
 
 function buildStep1() {
   const types = [
-    { key: 'style', emoji: '🎨', title: '그림체', desc: '특정 작가나 스타일의 화풍 전체를 복사', specs: ['Rank 64', 'Dual TE LR', '15 에폭', '최소 50장+'] },
+    { key: 'style', emoji: '🎨', title: '그림체', desc: '화풍·색감·선 스타일 복사. 프리셋 선택 가능', specs: ['LoCon', 'TE 끔', '최소 30장+'] },
     { key: 'character', emoji: '👤', title: '캐릭터', desc: '특정 캐릭터의 외형과 의상을 학습', specs: ['Rank 32', 'TE 포함', '10 에폭', '최소 20장+'] },
     { key: 'face', emoji: '😊', title: '얼굴', desc: '특정 인물의 얼굴 특징을 세밀하게 학습', specs: ['Rank 16', '얼굴 크롭', '10 에폭', '최소 15장+'] },
     { key: 'object', emoji: '📦', title: '사물/개념', desc: '특정 오브젝트, 아이템, 개념을 학습', specs: ['Rank 32', '전체 이미지', '10 에폭', '최소 10장+'] },
   ];
+
+  const stylePresets = [
+    {
+      key: 'style_balanced',
+      emoji: '⚖️',
+      title: '균형형',
+      desc: '스타일 강함 + 포즈·구도 제어 가능',
+      detail: 'LoCon · Rank 128 / Alpha 64 · conv 32 · TE 끔 · α/r=0.5',
+      tags: ['권장'],
+    },
+    {
+      key: 'style_copy',
+      emoji: '🔥',
+      title: '복사형',
+      desc: '체크포인트 영향 최소화, 최강 그림체 복사',
+      detail: 'LoCon · Rank 128 / Alpha 128 · conv 64 · TE 끔 · α/r=1.0',
+      tags: ['강력'],
+    },
+    {
+      key: 'style',
+      emoji: '🎨',
+      title: '기본형',
+      desc: '기존 표준 설정 (TE 포함, Rank 64)',
+      detail: 'networks.lora · Rank 64 / Alpha 32 · TE 포함',
+      tags: [],
+    },
+    {
+      key: 'style_custom',
+      emoji: '⚙️',
+      title: '커스텀',
+      desc: '모든 파라미터 직접 설정',
+      detail: '다음 단계에서 직접 입력',
+      tags: [],
+    },
+  ];
+
+  const isStyleSel = ['style','style_balanced','style_copy','style_custom'].includes(state.wizard.lora_type);
 
   return `
     <div style="margin-bottom:16px;">
@@ -810,7 +864,7 @@ function buildStep1() {
     </div>
     <div class="purpose-grid">
       ${types.map(t => `
-        <div class="purpose-card${state.wizard.lora_type === t.key ? ' selected' : ''}"
+        <div class="purpose-card${(t.key === 'style' ? isStyleSel : state.wizard.lora_type === t.key) ? ' selected' : ''}"
              onclick="selectPurpose('${t.key}', this)">
           <div class="purpose-card-emoji">${t.emoji}</div>
           <div class="purpose-card-title">${t.title}</div>
@@ -820,6 +874,80 @@ function buildStep1() {
           </div>
         </div>
       `).join('')}
+    </div>
+
+    <!-- 그림체 프리셋 (style 선택 시 표시) -->
+    <div id="stylePresetPanel" style="display:${isStyleSel ? 'block' : 'none'};margin-top:16px;">
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;">🎨 그림체 학습 방식 선택</div>
+      <div class="style-preset-grid">
+        ${stylePresets.map(p => `
+          <div class="style-preset-card${state.wizard.lora_type === p.key ? ' selected' : ''}"
+               onclick="selectStylePreset('${p.key}', this)">
+            <div class="style-preset-top">
+              <span class="style-preset-emoji">${p.emoji}</span>
+              <span class="style-preset-title">${p.title}</span>
+              ${p.tags.map(tag => `<span class="style-preset-tag">${tag}</span>`).join('')}
+            </div>
+            <div class="style-preset-desc">${p.desc}</div>
+            <div class="style-preset-detail">${p.detail}</div>
+          </div>
+        `).join('')}
+      </div>
+      ${state.wizard.lora_type === 'style_custom' ? `
+      <div class="style-custom-fields">
+        <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:10px;">커스텀 파라미터</div>
+        <div class="gen-params-grid" style="grid-template-columns:repeat(2,1fr);">
+          <div class="form-group">
+            <label class="form-label">Network Module</label>
+            <select class="form-input form-select" id="customNetModule" onchange="_saveCustomPreset()">
+              <option value="networks.lora">networks.lora (기본)</option>
+              <option value="lycoris.kohya">lycoris.kohya (LoCon/LoKr)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">LyCORIS Algo</label>
+            <select class="form-input form-select" id="customAlgo" onchange="_saveCustomPreset()">
+              <option value="locon">locon (권장)</option>
+              <option value="lokr">lokr</option>
+              <option value="lora">lora</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Rank (Dim)</label>
+            <input class="form-input" id="customRank" type="number" min="1" max="512" value="${state.wizard.customPreset?.rank||128}" oninput="_saveCustomPreset()">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Alpha</label>
+            <input class="form-input" id="customAlpha" type="number" min="1" max="512" value="${state.wizard.customPreset?.alpha||64}" oninput="_saveCustomPreset()">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Conv Dim</label>
+            <input class="form-input" id="customConvDim" type="number" min="0" max="512" value="${state.wizard.customPreset?.convDim||32}" oninput="_saveCustomPreset()">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Conv Alpha</label>
+            <input class="form-input" id="customConvAlpha" type="number" min="0" max="512" value="${state.wizard.customPreset?.convAlpha||32}" oninput="_saveCustomPreset()">
+          </div>
+          <div class="form-group" style="grid-column:1/-1;">
+            <label class="form-label">
+              <input type="checkbox" id="customTeOff" ${state.wizard.customPreset?.teOff ? 'checked' : ''} onchange="_saveCustomPreset()">
+              &nbsp;Text Encoder 학습 끔 (포즈/구도 제어력 유지)
+            </label>
+          </div>
+          <div class="form-group">
+            <label class="form-label">UNet LR</label>
+            <input class="form-input" id="customUnetLr" type="number" step="0.00001" value="${state.wizard.customPreset?.unetLr||0.0005}" oninput="_saveCustomPreset()">
+          </div>
+          <div class="form-group">
+            <label class="form-label">에폭</label>
+            <input class="form-input" id="customEpochs" type="number" min="1" max="100" value="${state.wizard.customPreset?.epochs||20}" oninput="_saveCustomPreset()">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Caption Dropout</label>
+            <input class="form-input" id="customDropout" type="number" min="0" max="1" step="0.05" value="${state.wizard.customPreset?.dropout||0.1}" oninput="_saveCustomPreset()">
+          </div>
+        </div>
+      </div>` : ''}
     </div>
   `;
 }
@@ -904,9 +1032,47 @@ function buildStep4() {
 }
 
 function selectPurpose(key, el) {
-  state.wizard.lora_type = key;
+  const wasStyle = ['style','style_balanced','style_copy','style_custom'].includes(state.wizard.lora_type);
+  // style 목적 카드 클릭 시 기존 style 프리셋 유지 or 초기화
+  if (key === 'style') {
+    const isAlreadyStyle = ['style','style_balanced','style_copy','style_custom'].includes(state.wizard.lora_type);
+    if (!isAlreadyStyle) state.wizard.lora_type = 'style_balanced'; // 기본 프리셋
+  } else {
+    state.wizard.lora_type = key;
+  }
   document.querySelectorAll('.purpose-card').forEach(c => c.classList.remove('selected'));
   el.classList.add('selected');
+  // 그림체 프리셋 패널 토글
+  const panel = $('stylePresetPanel');
+  const isStyle = ['style','style_balanced','style_copy','style_custom'].includes(state.wizard.lora_type);
+  if (panel) panel.style.display = isStyle ? 'block' : 'none';
+}
+
+function selectStylePreset(key, el) {
+  const prev = state.wizard.lora_type;
+  state.wizard.lora_type = key;
+  // 커스텀 ON/OFF 전환 시 step 재렌더로 커스텀 필드 표시/숨김
+  if (key === 'style_custom' || prev === 'style_custom') {
+    renderWizardStep(1);
+  } else {
+    document.querySelectorAll('.style-preset-card').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+  }
+}
+
+function _saveCustomPreset() {
+  state.wizard.customPreset = {
+    netModule:  $('customNetModule')?.value || 'lycoris.kohya',
+    algo:       $('customAlgo')?.value || 'locon',
+    rank:       parseInt($('customRank')?.value) || 128,
+    alpha:      parseInt($('customAlpha')?.value) || 64,
+    convDim:    parseInt($('customConvDim')?.value) || 32,
+    convAlpha:  parseInt($('customConvAlpha')?.value) || 32,
+    teOff:      $('customTeOff')?.checked ?? true,
+    unetLr:     parseFloat($('customUnetLr')?.value) || 0.0005,
+    epochs:     parseInt($('customEpochs')?.value) || 20,
+    dropout:    parseFloat($('customDropout')?.value) || 0.1,
+  };
 }
 
 function selectGpuMode(mode) {
@@ -1024,12 +1190,29 @@ async function createProject() {
   // Create project
   let project;
   try {
+    const customP = state.wizard.customPreset;
     project = await api('POST', '/api/projects', {
       name: state.wizard.name,
       lora_type: state.wizard.lora_type,
       trigger_word: state.wizard.trigger_word,
       base_model: state.wizard.base_model,
       gpu_mode: state.wizard.gpu_mode,
+      ...(state.wizard.lora_type === 'style_custom' && customP ? {
+        custom_overrides: {
+          training: {
+            network_module: customP.netModule,
+            network_args: customP.netModule === 'lycoris.kohya'
+              ? [`algo=${customP.algo}`, `conv_dim=${customP.convDim}`, `conv_alpha=${customP.convAlpha}`]
+              : [],
+            lora_rank: customP.rank,
+            lora_alpha: customP.alpha,
+            unet_lr: customP.unetLr,
+            network_train_unet_only: customP.teOff,
+            num_epochs: customP.epochs,
+            caption_dropout_rate: customP.dropout,
+          }
+        }
+      } : {}),
     });
     toast('프로젝트 생성됨!', 'success');
   } catch (e) {
@@ -1197,6 +1380,8 @@ function hideEmptyState() {
 
 // ── Standalone LoRA Validator View ────────────────────────────────────────────
 function showValidatorView() {
+  _saveGenForm();   // 생성기 상태 저장
+  _saveValForm();   // 검증기 상태도 저장 (이미 열려 있을 경우 대비)
   state.currentProjectId = null;
   document.querySelectorAll('.project-item').forEach(i => i.classList.remove('active'));
 
@@ -1253,13 +1438,17 @@ function showValidatorView() {
             <label class="form-label">테스트 프롬프트</label>
             <input class="form-input" id="standalonePrompt" value="masterpiece, best quality, 1girl, portrait, detailed">
           </div>
+          <div class="form-group" style="margin-bottom:8px;">
+            <label class="form-label">네거티브 프롬프트 <span style="opacity:.6;font-weight:400">(선택)</span></label>
+            <input class="form-input" id="standaloneNeg" placeholder="low quality, bad anatomy, watermark">
+          </div>
           <!-- 파라미터 -->
-          <div class="gen-params-grid" style="margin-bottom:8px;">
+          <div class="gen-params-grid" style="margin-bottom:12px;">
             <div class="form-group">
               <label class="form-label">스케줄러</label>
               <select class="form-input form-select" id="standaloneScheduler">
                 <option value="euler">Euler</option>
-                <option value="euler_a">Euler Ancestral</option>
+                <option value="euler_a">Euler a</option>
                 <option value="dpm++_2m" selected>DPM++ 2M</option>
                 <option value="dpm++_2m_karras">DPM++ 2M Karras</option>
                 <option value="ddim">DDIM</option>
@@ -1268,21 +1457,27 @@ function showValidatorView() {
               </select>
             </div>
             <div class="form-group">
-              <label class="form-label">스텝 수</label>
+              <label class="form-label">스텝</label>
               <input class="form-input" id="standaloneSteps" type="number" min="1" max="150" value="20">
             </div>
             <div class="form-group">
-              <label class="form-label">CFG Scale</label>
+              <label class="form-label">CFG</label>
               <input class="form-input" id="standaloneCfg" type="number" min="1" max="20" step="0.5" value="7">
             </div>
             <div class="form-group">
-              <label class="form-label">Seed</label>
-              <input class="form-input" id="standaloneSeed" type="number" value="42">
+              <label class="form-label">Seed <span style="opacity:.5;font-size:10px">(-1=랜덤)</span></label>
+              <input class="form-input" id="standaloneSeed" type="number" value="-1">
             </div>
-          </div>
-          <div class="form-group" style="margin-bottom:12px;">
-            <label class="form-label">네거티브 프롬프트 <span style="opacity:.6;font-weight:400">(선택)</span></label>
-            <input class="form-input" id="standaloneNeg" placeholder="low quality, bad anatomy, watermark">
+            <div class="form-group">
+              <label class="form-label">LoRA 스트렝스 <span class="param-val-display" id="standaloneLoraScaleVal">1.00</span></label>
+              <input class="form-range" id="standaloneLoraScale" type="range" min="0" max="2" step="0.05" value="1.0"
+                oninput="$('standaloneLoraScaleVal').textContent = parseFloat(this.value).toFixed(2)">
+            </div>
+            <div class="form-group">
+              <label class="form-label">노이즈 제거량 <span class="param-val-display" id="standaloneDenoisingVal">0.75</span></label>
+              <input class="form-range" id="standaloneDenoising" type="range" min="0" max="1" step="0.05" value="0.75"
+                oninput="$('standaloneDenoisingVal').textContent = parseFloat(this.value).toFixed(2)">
+            </div>
           </div>
           <button class="btn btn-primary btn-sm" id="standaloneRunBtn" onclick="runStandaloneInference()">🖼️ 이미지 생성 테스트</button>
           <div id="standaloneImages" style="margin-top:16px;"></div>
@@ -1290,6 +1485,7 @@ function showValidatorView() {
       </div>
     </div>
   `;
+  _restoreValForm();  // 저장된 상태 복원
 }
 
 // current lora file path for standalone validator
@@ -1410,6 +1606,8 @@ async function runStandaloneInference() {
   const baseModel = $('standaloneBaseModel')?.value.trim();
   const prompt = $('standalonePrompt')?.value.trim() || 'masterpiece, best quality, portrait';
   const trigger = $('standaloneTrigger')?.value.trim() || '';
+  const seedRaw = parseInt($('standaloneSeed')?.value) ?? -1;
+  const seedVal = seedRaw === -1 ? Math.floor(Math.random() * 2147483647) : seedRaw;
   const loraPath = state._standaloneLoraPath;
 
   if (!baseModel) { toast('베이스 모델 경로를 입력하세요', 'error'); return; }
@@ -1432,7 +1630,9 @@ async function runStandaloneInference() {
         steps: parseInt($('standaloneSteps')?.value) || 20,
         cfg_scale: parseFloat($('standaloneCfg')?.value) || 7.0,
         scheduler: $('standaloneScheduler')?.value || 'euler',
-        seed: parseInt($('standaloneSeed')?.value) || 42,
+        seed: seedVal,
+        lora_scale: parseFloat($('standaloneLoraScale')?.value ?? 1.0),
+        denoising_strength: parseFloat($('standaloneDenoising')?.value ?? 0.75),
       }),
     });
     const data = await r.json();
@@ -1481,33 +1681,149 @@ async function runStandaloneInference() {
 
 
 // ── Standalone Image Generator View ──────────────────────────────────────────
+// ── Standalone Image Generator View ──────────────────────────────────────────
+
+function _saveGenForm() {
+  const f = window._genForm;
+  const safe = (id, def) => $(id)?.value ?? def;
+  f.baseModel = safe('genBaseModel', f.baseModel);
+  f.loraFile  = safe('genLoraFile',  f.loraFile);
+  f.prompt    = safe('genPrompt',    f.prompt);
+  f.neg       = safe('genNeg',       f.neg);
+  f.trigger   = safe('genTrigger',   f.trigger);
+  f.scheduler = safe('genScheduler', f.scheduler);
+  f.steps     = parseInt(safe('genSteps', f.steps));
+  f.cfg       = parseFloat(safe('genCfg', f.cfg));
+  f.seed      = parseInt(safe('genSeed', f.seed));
+  f.count     = parseInt(safe('genCount', f.count));
+  f.loraScale = parseFloat(safe('genLoraScale', f.loraScale));
+  f.denoising = parseFloat(safe('genDenoising', f.denoising));
+  f.customW   = parseInt(safe('genCustomW', f.customW));
+  f.customH   = parseInt(safe('genCustomH', f.customH));
+  document.querySelectorAll('.gen-res-check').forEach(cb => {
+    f['res_' + cb.value.replace(/[|×]/g,'_')] = cb.checked;
+  });
+  f.inputImagePath = $('genInputImage')?.value.trim() || '';
+  const gp = $('genGalleryPanel');
+  if (gp && !gp.querySelector('.gen-gallery-empty')) f.galleryHTML = gp.innerHTML;
+  const qp = $('genQueuePanel');
+  if (qp && qp.style.display !== 'none') f.queueHTML = qp.innerHTML;
+}
+
+function _restoreGenForm() {
+  const f = window._genForm;
+  const set = (id, val) => { const el = $(id); if (el && val !== undefined && val !== '') el.value = val; };
+  set('genBaseModel', f.baseModel);
+  set('genLoraFile',  f.loraFile);
+  set('genPrompt',    f.prompt);
+  set('genNeg',       f.neg);
+  set('genTrigger',   f.trigger);
+  set('genScheduler', f.scheduler);
+  set('genSteps',     f.steps);
+  set('genCfg',       f.cfg);
+  set('genSeed',      f.seed);
+  set('genCount',     f.count);
+  set('genLoraScale', f.loraScale);
+  set('genDenoising', f.denoising);
+  set('genCustomW',   f.customW);
+  set('genCustomH',   f.customH);
+  // update slider displays
+  if ($('genLoraScaleVal'))  $('genLoraScaleVal').textContent  = parseFloat(f.loraScale).toFixed(2);
+  if ($('genDenoisingVal'))  $('genDenoisingVal').textContent  = parseFloat(f.denoising).toFixed(2);
+  // restore i2i image
+  if (f.inputImagePath) setInputImage(f.inputImagePath);
+  // restore gallery — galleryHTML is kept up-to-date by _autoSaveGallery on every result
+  const gp = $('genGalleryPanel');
+  if (gp && f.galleryHTML) {
+    gp.innerHTML = f.galleryHTML;
+    _updateGalleryCount();
+  }
+    // restore queue
+  const qp = $('genQueuePanel');
+  if (qp) _renderGenQueue();
+  updateGenHint();
+  // Restore running state UI if generation is still active
+  if (_gen.running) {
+    const rb = $('genRunBtn');
+    if (rb) rb.textContent = '🔄 생성 중 (클릭: 대기열 추가)';
+    const cb = $('genCancelBtn');
+    if (cb) cb.style.display = 'inline-flex';
+    const pw = $('genProgressWrap');
+    if (pw) pw.style.display = 'block';
+  }
+}
+
+function _saveValForm() {
+  const f = window._valForm;
+  const safe = (id, def) => $(id)?.value ?? def;
+  f.loraPath  = window.state?._standaloneLoraPath || f.loraPath;
+  f.baseModel = safe('standaloneBaseModel', f.baseModel);
+  f.prompt    = safe('standalonePrompt',    f.prompt);
+  f.neg       = safe('standaloneNeg',       f.neg);
+  f.trigger   = safe('standaloneTrigger',   f.trigger);
+  f.scheduler = safe('standaloneScheduler', f.scheduler);
+  f.steps     = parseInt(safe('standaloneSteps', f.steps));
+  f.cfg       = parseFloat(safe('standaloneCfg', f.cfg));
+  f.seed      = parseInt(safe('standaloneSeed', f.seed));
+  f.loraScale = parseFloat(safe('standaloneLoraScale', f.loraScale));
+  f.denoising = parseFloat(safe('standaloneDenoising', f.denoising));
+  const ri = $('standaloneImages');
+  if (ri && ri.innerHTML && !ri.querySelector('.val-loading')) f.resultsHTML = ri.innerHTML;
+}
+
+function _restoreValForm() {
+  const f = window._valForm;
+  const set = (id, val) => { const el = $(id); if (el && val !== undefined && val !== '') el.value = val; };
+  if (f.loraPath) {
+    state._standaloneLoraPath = f.loraPath;
+    // update path display
+    const lp = $('standaloneLoraPath');
+    if (lp) lp.textContent = f.loraPath.split(/[\\/]/).pop();
+    const inf = $('standaloneInferenceSection');
+    if (inf) inf.style.display = 'block';
+  }
+  set('standaloneBaseModel', f.baseModel);
+  set('standalonePrompt',    f.prompt);
+  set('standaloneNeg',       f.neg);
+  set('standaloneTrigger',   f.trigger);
+  set('standaloneScheduler', f.scheduler);
+  set('standaloneSteps',     f.steps);
+  set('standaloneCfg',       f.cfg);
+  set('standaloneSeed',      f.seed);
+  set('standaloneLoraScale', f.loraScale);
+  set('standaloneDenoising', f.denoising);
+  if ($('standaloneLoraScaleVal')) $('standaloneLoraScaleVal').textContent = parseFloat(f.loraScale).toFixed(2);
+  if ($('standaloneDenoisingVal')) $('standaloneDenoisingVal').textContent = parseFloat(f.denoising).toFixed(2);
+  const ri = $('standaloneImages');
+  if (ri && f.resultsHTML) ri.innerHTML = f.resultsHTML;
+}
+const _gen = window._genState;
+
 function showImageGenView() {
+  _saveValForm();   // 검증기 상태 저장
+  _saveGenForm();   // 생성기 상태도 저장 (이미 열려 있을 경우 대비)
   state.currentProjectId = null;
   document.querySelectorAll('.project-item').forEach(i => i.classList.remove('active'));
-
   $('mainContent').innerHTML = `
-    <div class="validator-view">
-      <div class="validator-header">
-        <div class="validator-title">🎨 이미지 생성기</div>
-        <div class="validator-sub">LoRA를 적용해 SDXL 이미지를 생성하고 before/after를 비교합니다</div>
-      </div>
-
-      <div class="validator-body">
+    <div class="gen-layout">
+      <!-- ── Left: config ─────────────────────── -->
+      <div class="gen-left">
         <div class="gen-config-card">
-          <!-- 모델 설정 -->
-          <div class="gen-section-title">📁 모델</div>
+          <div class="gen-view-title">🎨 이미지 생성기</div>
+
+          <div class="gen-section-title" style="margin-top:14px;">📁 모델</div>
           <div class="form-group">
             <label class="form-label">베이스 모델</label>
             <div class="path-input-row">
               <input class="form-input" id="genBaseModel" placeholder="D:/Models/animagine-xl.safetensors">
-              <button class="btn-browse" onclick="browsePath('genBaseModel','.safetensors,.ckpt')" title="파일 찾아보기">📁</button>
+              <button class="btn-browse" onclick="browsePath('genBaseModel','.safetensors,.ckpt')">📁</button>
             </div>
           </div>
           <div class="form-group">
             <label class="form-label">LoRA 파일</label>
             <div class="path-input-row">
               <input class="form-input" id="genLoraFile" placeholder="D:/LoRA/my_lora.safetensors">
-              <button class="btn-browse" onclick="browsePath('genLoraFile','.safetensors,.ckpt')" title="파일 찾아보기">📁</button>
+              <button class="btn-browse" onclick="browsePath('genLoraFile','.safetensors,.ckpt')">📁</button>
             </div>
           </div>
           <div class="form-group">
@@ -1517,27 +1833,72 @@ function showImageGenView() {
 
           <div class="gen-divider"></div>
 
-          <!-- 프롬프트 -->
           <div class="gen-section-title">✏️ 프롬프트</div>
           <div class="form-group">
-            <label class="form-label">포지티브 프롬프트</label>
-            <textarea class="form-input gen-textarea" id="genPrompt" rows="3" placeholder="masterpiece, best quality, 1girl, portrait, detailed">masterpiece, best quality, 1girl, portrait, detailed</textarea>
+            <label class="form-label">포지티브</label>
+            <textarea class="form-input gen-textarea" id="genPrompt" rows="3">masterpiece, best quality, 1girl, portrait, detailed</textarea>
           </div>
           <div class="form-group">
-            <label class="form-label">네거티브 프롬프트</label>
+            <label class="form-label">네거티브</label>
             <textarea class="form-input gen-textarea" id="genNeg" rows="2" placeholder="low quality, bad anatomy, watermark, blurry"></textarea>
           </div>
 
           <div class="gen-divider"></div>
 
-          <!-- 파라미터 -->
+          <div class="gen-section-title">📐 해상도</div>
+          <div class="gen-res-list">
+            <label class="gen-res-item"><input type="checkbox" class="gen-res-check" value="1024|1024|1:1" checked><span class="gen-res-size">1024×1024</span><span class="gen-res-ratio">1:1</span></label>
+            <label class="gen-res-item"><input type="checkbox" class="gen-res-check" value="832|1216|2:3 세로" checked><span class="gen-res-size">832×1216</span><span class="gen-res-ratio">2:3 세로</span></label>
+            <label class="gen-res-item"><input type="checkbox" class="gen-res-check" value="1216|832|3:2 가로" checked><span class="gen-res-size">1216×832</span><span class="gen-res-ratio">3:2 가로</span></label>
+            <label class="gen-res-item gen-res-custom-row">
+              <input type="checkbox" class="gen-res-check" id="genCustomResCheck" value="custom">
+              <span class="gen-res-size">Custom</span>
+              <span class="gen-res-ratio gen-custom-inputs">
+                <input class="form-input gen-custom-dim" id="genCustomW" type="number" min="64" max="2048" step="64" value="512" onclick="event.stopPropagation()">
+                <span style="color:var(--text-muted)">×</span>
+                <input class="form-input gen-custom-dim" id="genCustomH" type="number" min="64" max="2048" step="64" value="512" onclick="event.stopPropagation()">
+              </span>
+            </label>
+          </div>
+
+          <div class="gen-divider"></div>
+
+          <!-- i2i 이미지 입력 -->
+          <div class="gen-section-title">🖼️ 입력 이미지 <span style="font-size:10px;font-weight:400;color:var(--text-muted)">(없으면 t2i, 있으면 i2i)</span></div>
+          <div class="form-group" style="margin-bottom:4px;">
+            <div class="path-input-row">
+              <input class="form-input" id="genInputImage" placeholder="비워두면 t2i 모드 (텍스트→이미지)" readonly
+                style="cursor:pointer;font-size:11px;color:var(--text-muted);"
+                onclick="browseInputImage()">
+              <button class="btn-browse" onclick="browseInputImage()" title="이미지 선택">📁</button>
+              <button class="btn-browse" id="genInputImageClear" onclick="clearInputImage()" title="지우기" style="display:none;color:var(--red);">✕</button>
+            </div>
+          </div>
+          <!-- i2i 미리보기 + 노이즈 제거량 (이미지 있을 때만 표시) -->
+          <div id="genI2IPanel" style="display:none;margin-bottom:8px;">
+            <div class="i2i-preview-box">
+              <img id="genInputImageThumb" src="" alt="입력 이미지"
+                style="width:100%;max-height:220px;object-fit:contain;border-radius:8px;background:var(--bg-deep);display:block;">
+            </div>
+            <div class="form-group" style="margin-top:10px;margin-bottom:0;">
+              <label class="form-label">노이즈 제거량 <span class="param-val-display" id="genDenoisingVal">0.75</span></label>
+              <input class="form-range" id="genDenoising" type="range" min="0.1" max="1" step="0.05" value="0.75"
+                oninput="$('genDenoisingVal').textContent = parseFloat(this.value).toFixed(2)">
+              <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);margin-top:3px;">
+                <span>0.1 미세변형</span><span>0.75 권장</span><span>1.0 완전변환</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="gen-divider"></div>
+
           <div class="gen-section-title">⚙️ 파라미터</div>
           <div class="gen-params-grid">
-            <div class="form-group">
+            <div class="form-group" style="grid-column:1/-1;">
               <label class="form-label">스케줄러</label>
               <select class="form-input form-select" id="genScheduler">
                 <option value="euler">Euler</option>
-                <option value="euler_a">Euler Ancestral</option>
+                <option value="euler_a">Euler a</option>
                 <option value="dpm++_2m" selected>DPM++ 2M</option>
                 <option value="dpm++_2m_karras">DPM++ 2M Karras</option>
                 <option value="ddim">DDIM</option>
@@ -1546,106 +1907,398 @@ function showImageGenView() {
               </select>
             </div>
             <div class="form-group">
-              <label class="form-label">스텝 수</label>
+              <label class="form-label">스텝</label>
               <input class="form-input" id="genSteps" type="number" min="1" max="150" value="20">
             </div>
             <div class="form-group">
-              <label class="form-label">CFG Scale</label>
+              <label class="form-label">CFG</label>
               <input class="form-input" id="genCfg" type="number" min="1" max="20" step="0.5" value="7">
             </div>
+          </div>
+          <div class="gen-params-grid" style="margin-top:0;">
             <div class="form-group">
-              <label class="form-label">Seed <span style="opacity:.5;font-size:10px">(-1 = 랜덤)</span></label>
-              <input class="form-input" id="genSeed" type="number" value="42">
+              <label class="form-label">Seed <span style="opacity:.5;font-size:10px">(-1=랜덤)</span></label>
+              <input class="form-input" id="genSeed" type="number" value="-1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">생성 횟수</label>
+              <input class="form-input" id="genCount" type="number" min="1" max="20" value="1" oninput="updateGenHint()">
+            </div>
+            <div class="form-group">
+              <label class="form-label">LoRA 스트렝스 <span class="param-val-display" id="genLoraScaleVal">1.00</span></label>
+              <input class="form-range" id="genLoraScale" type="range" min="0" max="2" step="0.05" value="1.0"
+                oninput="$('genLoraScaleVal').textContent = parseFloat(this.value).toFixed(2)">
+            </div>
+
+          </div>
+          <div class="gen-count-hint" id="genCountHint">해상도 3개 × 1회 = 총 6장 생성</div>
+
+          <div style="display:flex;gap:8px;margin-top:12px;">
+            <button class="btn btn-primary" id="genRunBtn" onclick="runImageGen()" style="flex:1;">
+              🖼️ 생성 시작
+            </button>
+            <button class="btn btn-danger" id="genCancelBtn" onclick="cancelImageGen()" style="display:none;">
+              ✕ 취소
+            </button>
+          </div>
+
+          <!-- 진행 상황 -->
+          <div id="genProgressWrap" style="display:none;margin-top:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+              <div class="gen-progress-label" id="genProgressLabel">준비 중...</div>
+              <div class="gen-progress-pct" id="genProgressPct">0%</div>
+            </div>
+            <div class="gen-progress-track">
+              <div class="gen-progress-fill" id="genProgressFill" style="width:0%"></div>
             </div>
           </div>
 
-          <button class="btn btn-primary" id="genRunBtn" onclick="runImageGen()" style="width:100%;margin-top:4px;">
-            🖼️ 생성 시작 (3가지 해상도)
-          </button>
+          <!-- 대기열 -->
+          <div id="genQueuePanel" style="display:none;margin-top:10px;"></div>
         </div>
+      </div>
 
-        <div id="genImages" style="margin-top:20px;"></div>
+      <!-- ── Right: gallery ────────────────────── -->
+      <div class="gen-right">
+        <div class="gen-gallery-header">
+          <span id="genGalleryCount" class="gen-gallery-stat">생성된 이미지 없음</span>
+          <button class="btn btn-ghost btn-sm" onclick="clearGenGallery()">🗑 초기화</button>
+        </div>
+        <div id="genGalleryPanel" class="gen-gallery-panel">
+          <div class="gen-gallery-empty">
+            <div class="gen-gallery-empty-icon">🖼️</div>
+            <div>생성된 이미지가 여기에 표시됩니다</div>
+          </div>
+        </div>
       </div>
     </div>
   `;
+
+  // 체크박스 변경 시 힌트 업데이트
+  document.querySelectorAll('.gen-res-check').forEach(cb => cb.addEventListener('change', updateGenHint));
+  _restoreGenForm();   // 저장된 상태 복원
 }
 
-async function runImageGen() {
-  const btn = $('genRunBtn');
-  const baseModel = $('genBaseModel')?.value.trim();
-  const loraFile  = $('genLoraFile')?.value.trim();
-  const prompt    = $('genPrompt')?.value.trim() || 'masterpiece, best quality, portrait';
-  const neg       = $('genNeg')?.value.trim() || '';
-  const trigger   = $('genTrigger')?.value.trim() || '';
-  const steps     = parseInt($('genSteps')?.value) || 20;
-  const cfg       = parseFloat($('genCfg')?.value) || 7.0;
-  const scheduler = $('genScheduler')?.value || 'euler';
-  const seedVal   = parseInt($('genSeed')?.value) ?? 42;
-  const seed      = seedVal === -1 ? Math.floor(Math.random() * 2147483647) : seedVal;
+function updateGenHint() {
+  const checked = document.querySelectorAll('.gen-res-check:checked').length;
+  const count = parseInt($('genCount')?.value) || 1;
+  const hint = $('genCountHint');
+  if (hint) hint.textContent = `해상도 ${checked}개 × ${count}회 = 총 ${checked * count * 2}장 생성 (Before/After 포함)`;
+}
 
-  if (!baseModel) { toast('베이스 모델 경로를 입력하세요', 'error'); return; }
-  if (!loraFile)  { toast('LoRA 파일 경로를 입력하세요', 'error'); return; }
+function getSelectedResolutions() {
+  const list = [];
+  document.querySelectorAll('.gen-res-check:checked').forEach(cb => {
+    if (cb.value === 'custom') {
+      const w = parseInt($('genCustomW')?.value) || 512;
+      const h = parseInt($('genCustomH')?.value) || 512;
+      list.push({ width: w, height: h, label: 'Custom' });
+    } else {
+      const [w, h, label] = cb.value.split('|');
+      list.push({ width: parseInt(w), height: parseInt(h), label });
+    }
+  });
+  return list;
+}
 
-  $('genImages').innerHTML = '<div class="val-loading">🖼️ 이미지 생성 중... 3가지 해상도 순서대로 진행 (1~3분 소요)</div>';
-  btn.disabled = true;
-  btn.textContent = '생성 중...';
+function browseInputImage() {
+  if (window.electronAPI?.openFile) {
+    const filters = [{ name: 'Images', extensions: ['png','jpg','jpeg','webp','bmp'] }];
+    window.electronAPI.openFile(filters).then(p => { if (p) setInputImage(p); });
+    return;
+  }
+  api('POST', '/api/browse', { mode: 'file', accept: '.png,.jpg,.jpeg,.webp,.bmp', title: '입력 이미지 선택' })
+    .then(res => { if (res.path) setInputImage(res.path); })
+    .catch(() => toast('파일 경로를 직접 붙여넣기 하세요', 'info'));
+}
+
+function setInputImage(imgPath) {
+  const inp = $('genInputImage');
+  if (inp) { inp.value = imgPath; inp.style.color = ''; }
+  const thumb = $('genInputImageThumb');
+  if (thumb) thumb.src = '/api/image?path=' + encodeURIComponent(imgPath);
+  const panel = $('genI2IPanel');
+  if (panel) panel.style.display = 'block';
+  const clrBtn = $('genInputImageClear');
+  if (clrBtn) clrBtn.style.display = '';
+  window._genForm.inputImagePath = imgPath;
+}
+
+function clearInputImage() {
+  const inp = $('genInputImage');
+  if (inp) { inp.value = ''; inp.style.color = 'var(--text-muted)'; }
+  const panel = $('genI2IPanel');
+  if (panel) panel.style.display = 'none';
+  const clrBtn = $('genInputImageClear');
+  if (clrBtn) clrBtn.style.display = 'none';
+  window._genForm.inputImagePath = '';
+}
+
+function _readGenParams() {
+  return {
+    baseModel:   $('genBaseModel')?.value.trim() || '',
+    loraFile:    $('genLoraFile')?.value.trim() || '',
+    prompt:      $('genPrompt')?.value.trim() || 'masterpiece, best quality, portrait',
+    neg:         $('genNeg')?.value.trim() || '',
+    trigger:     $('genTrigger')?.value.trim() || '',
+    steps:       parseInt($('genSteps')?.value) || 20,
+    cfg:         parseFloat($('genCfg')?.value) || 7.0,
+    scheduler:   $('genScheduler')?.value || 'euler',
+    baseSeed:    parseInt($('genSeed')?.value) ?? -1,
+    count:       Math.min(parseInt($('genCount')?.value) || 1, 20),
+    resolutions: getSelectedResolutions(),
+    loraScale:      parseFloat($('genLoraScale')?.value ?? 1.0),
+    denoising:      parseFloat($('genDenoising')?.value ?? 0.75),
+    inputImagePath: $('genInputImage')?.value.trim() || '',
+  };
+}
+
+function runImageGen() {
+  const p = _readGenParams();
+  if (!p.baseModel)          { toast('베이스 모델 경로를 입력하세요', 'error'); return; }
+  if (!p.loraFile)           { toast('LoRA 파일 경로를 입력하세요', 'error'); return; }
+  if (!p.resolutions.length) { toast('해상도를 하나 이상 선택하세요', 'error'); return; }
+
+  const jobId = ++_gen.queueCounter;
+  const job = { id: jobId, params: p, label: `#${jobId} · Seed ${p.baseSeed === -1 ? '랜덤' : p.baseSeed} · ${p.resolutions.length}해상도 × ${p.count}회` };
+
+  if (_gen.running) {
+    _gen.queue.push(job);
+    _renderGenQueue();
+    toast(`대기열에 추가됨 (대기 ${_gen.queue.length}개)`, 'info');
+    return;
+  }
+  _startGenJob(job);
+}
+
+function _renderGenQueue() {
+  const el = $('genQueuePanel');
+  if (!el) return;
+  if (_gen.queue.length === 0) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div class="gen-queue-header">⏳ 대기열 <span class="gen-queue-badge">${_gen.queue.length}</span></div>
+    ${_gen.queue.map(j => `
+      <div class="gen-queue-item" id="qitem-${j.id}">
+        <span class="gen-queue-label">${escHtml(j.label)}</span>
+        <button class="btn-queue-cancel" onclick="cancelQueueItem(${j.id})" title="대기열에서 제거">✕</button>
+      </div>
+    `).join('')}
+    <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px;" onclick="clearGenQueue()">🗑 대기열 전체 취소</button>
+  `;
+}
+
+function cancelQueueItem(id) {
+  _gen.queue = _gen.queue.filter(j => j.id !== id);
+  _renderGenQueue();
+  toast('대기열 항목 제거됨', 'info');
+}
+
+function clearGenQueue() {
+  _gen.queue = [];
+  _renderGenQueue();
+  toast('대기열이 비워졌습니다', 'info');
+}
+
+async function _startGenJob(job) {
+  const { params: p, id: jobId } = job;
+  const btn       = $('genRunBtn');
+  const cancelBtn = $('genCancelBtn');
+  const pw  = $('genProgressWrap');
+  const pl  = $('genProgressLabel');
+  const pf  = $('genProgressFill');
+  const pct = $('genProgressPct');
+
+  _gen.running   = true;
+  _gen.cancelled = false;
+  if (btn) { btn.textContent = '🔄 생성 중 (클릭: 대기열 추가)'; }
+  if (cancelBtn) cancelBtn.style.display = 'inline-flex';
+  if (pw) pw.style.display = 'block';
+
+  let pollTimer = null;
+  function startPoll(genId) {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(async () => {
+      try {
+        const r = await fetch('/api/generate/progress/' + genId);
+        const pp = await r.json();
+        if (pl)  pl.textContent  = pp.label  || '생성 중...';
+        if (pf)  pf.style.width  = (pp.percent || 0) + '%';
+        if (pct) pct.textContent = (pp.percent || 0) + '%';
+      } catch (_) {}
+    }, 350);
+  }
+  function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+  if (pl)  pl.textContent  = `[#${jobId}] 준비 중...`;
+  if (pf)  pf.style.width  = '0%';
+  if (pct) pct.textContent = '0%';
 
   try {
-    const r = await fetch('/api/validate/inference-file', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        file_path: loraFile,
-        base_model: baseModel,
-        prompt,
-        negative_prompt: neg,
-        trigger_word: trigger,
-        steps,
-        cfg_scale: cfg,
-        scheduler,
-        seed,
-      }),
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.detail || '실패');
-
-    const results = data.results || [];
-    if (!results.length) throw new Error('결과가 없습니다');
-
-    const cols = results.map(res => `
-      <div class="val-resolution-col">
-        <div class="val-resolution-header">
-          <span class="val-res-badge">${escHtml(res.size)}</span>
-          <span class="val-res-label">${escHtml(res.label)}</span>
-        </div>
-        <div class="val-compare-grid">
-          <div class="val-compare-card" onclick="openLightbox('data:image/png;base64,${res.before}', 'LoRA 없음 · ${escHtml(res.size)}')">
-            <div class="val-card-tag val-tag-before">Before</div>
-            <img src="data:image/png;base64,${res.before}" class="val-img" loading="lazy">
-            <div class="val-zoom-hint">🔍 클릭하여 확대</div>
-          </div>
-          <div class="val-compare-card" onclick="openLightbox('data:image/png;base64,${res.after}', 'LoRA 적용 · ${escHtml(res.size)}')">
-            <div class="val-card-tag val-tag-after">After</div>
-            <img src="data:image/png;base64,${res.after}" class="val-img" loading="lazy">
-            <div class="val-zoom-hint">🔍 클릭하여 확대</div>
-          </div>
-        </div>
-      </div>
-    `).join('');
-
-    $('genImages').innerHTML = `
-      <div class="val-prompt-bar">
-        <span class="val-prompt-icon">💬</span>
-        <span class="val-prompt-text">${escHtml(data.prompt_used)}</span>
-      </div>
-      <div class="val-multi-resolution">${cols}</div>
-    `;
-  } catch (e) {
-    $('genImages').innerHTML = `<div class="val-error">❌ ${e.message}</div>`;
+    for (let i = 0; i < p.count; i++) {
+      if (_gen.cancelled) break;
+      const seed  = p.baseSeed === -1 ? Math.floor(Math.random() * 2147483647) : p.baseSeed + i;
+      const genId = 'gen-' + Date.now() + '-' + i;
+      _gen.currentGenId = genId;
+      const loadId = 'gen-load-' + genId;
+      _genPrependLoading(loadId, i + 1, p.count, seed);
+      startPoll(genId);
+      try {
+        const r = await fetch('/api/validate/inference-file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            file_path: p.loraFile, base_model: p.baseModel,
+            prompt: p.prompt, negative_prompt: p.neg, trigger_word: p.trigger,
+            steps: p.steps, cfg_scale: p.cfg, scheduler: p.scheduler,
+            seed, resolutions: p.resolutions, gen_id: genId,
+            lora_scale: p.loraScale, denoising_strength: p.denoising,
+            input_image_path: p.inputImagePath || '',
+          }),
+        });
+        stopPoll();
+        const data = await r.json();
+        if (data.cancelled) { _genReplaceError(loadId, '취소됨'); break; }
+        if (!r.ok) throw new Error(data.detail || '실패');
+        const actualSeed = data.seed_used ?? seed;  // 백엔드 실제 seed 우선
+        _genReplaceResult(loadId, {
+          seed: actualSeed, scheduler: p.scheduler, steps: p.steps, cfg: p.cfg,
+          prompt: data.prompt_used, results: data.results || [],
+          time: new Date().toLocaleTimeString(),
+        });
+      } catch (e) {
+        stopPoll();
+        _genReplaceError(loadId, _gen.cancelled ? '취소됨' : e.message);
+        if (_gen.cancelled) break;
+      }
+    }
   } finally {
-    btn.disabled = false;
-    btn.textContent = '🖼️ 생성 시작 (3가지 해상도)';
+    stopPoll();
+    _gen.currentGenId = null;
+    _gen.running = false;
+    if (btn) btn.textContent = '🖼️ 생성 시작';
+    if (cancelBtn) cancelBtn.style.display = 'none';
+    if (pl)  pl.textContent  = _gen.cancelled ? '⛔ 취소됨' : '✅ 완료!';
+    if (pf)  pf.style.width  = '100%';
+    if (pct) pct.textContent = '100%';
+    setTimeout(() => { if (pw) pw.style.display = 'none'; }, 2000);
+    // process next in queue
+    if (_gen.queue.length > 0 && !_gen.cancelled) {
+      const next = _gen.queue.shift();
+      _renderGenQueue();
+      _startGenJob(next);
+    } else {
+      _gen.queue = [];
+      _renderGenQueue();
+    }
   }
+}
+
+function cancelImageGen() {
+  _gen.cancelled = true;
+  if (_gen.currentGenId) {
+    fetch('/api/generate/cancel/' + _gen.currentGenId, { method: 'POST' }).catch(() => {});
+  }
+  const pl = $('genProgressLabel');
+  if (pl) pl.textContent = '⛔ 취소 요청 중... (현재 해상도 완료 후 중단)';
+  // also clear queue
+  _gen.queue = [];
+  _renderGenQueue();
+}
+
+// ── Gallery helpers ───────────────────────────────────────────────────────────
+function _genPrependLoading(id, cur, total, seed) {
+  // Store pending slot in buffer regardless of whether view is active
+  if (!_gen.pendingSlots) _gen.pendingSlots = {};
+  _gen.pendingSlots[id] = { cur, total, seed, status: 'loading' };
+
+  const panel = $('genGalleryPanel');
+  if (!panel) return;
+  panel.querySelector('.gen-gallery-empty')?.remove();
+  const el = document.createElement('div');
+  el.id = id;
+  el.className = 'gen-result-card gen-result-loading';
+  el.innerHTML = `
+    <div class="gen-result-header">
+      <span class="gen-result-run">#${_gen.gallery.length + cur}</span>
+      <span class="gen-result-meta">Seed ${seed} · 생성 중... (${cur}/${total})</span>
+    </div>
+    <div class="gen-loading-pulse">⏳ 이미지 생성 중...</div>
+  `;
+  panel.insertBefore(el, panel.firstChild);
+  _updateGalleryCount();
+}
+
+function _genReplaceResult(id, data) {
+  // Always record the result — even if the view is not currently visible
+  _gen.gallery.unshift(data);
+  if (!_gen.resultBuffer) _gen.resultBuffer = [];
+  _gen.resultBuffer.unshift({ id, data });
+  if (_gen.pendingSlots) delete _gen.pendingSlots[id];
+
+  // Build card HTML (used both for DOM insertion and for off-screen save)
+  const _cardAfterCols = data.results.map(res => `
+    <div class="gen-after-col">
+      <div class="val-compare-card" onclick="openLightbox('data:image/png;base64,${res.after}','LoRA 적용 · ${escHtml(res.size)} · Seed:${data.seed}')">
+        <div class="val-card-tag val-tag-after">After</div>
+        <img src="data:image/png;base64,${res.after}" class="val-img gen-after-img" loading="lazy">
+        <div class="val-zoom-hint">🔍 확대</div>
+      </div>
+      <div class="gen-before-strip" onclick="openLightbox('data:image/png;base64,${res.before}','Before · ${escHtml(res.size)}')">
+        <img src="data:image/png;base64,${res.before}" loading="lazy">
+        <span class="gen-before-label">${escHtml(res.size)}</span>
+      </div>
+    </div>
+  `).join('');
+  const _cardHTML = `<div class="gen-result-header">
+      <span class="gen-result-run">#${_gen.gallery.length}</span>
+      <span class="gen-result-meta">Seed ${data.seed} · ${escHtml(data.scheduler)} · ${data.steps}step · CFG ${data.cfg}</span>
+      <span class="gen-result-time">${data.time}</span>
+    </div>
+    <div class="gen-prompt-line">💬 ${escHtml(data.prompt)}</div>
+    <div class="gen-after-row">${_cardAfterCols}</div>`;
+
+  const el = document.getElementById(id);
+  if (!el) {
+    // View not active — directly write the card HTML into galleryHTML so it's ready on return
+    const existingGallery = window._genForm.galleryHTML || '';
+    window._genForm.galleryHTML =
+      '<div class="gen-result-card">' + _cardHTML + '</div>' + existingGallery;
+    return;
+  }
+
+  el.className = 'gen-result-card';
+  el.innerHTML = _cardHTML;
+  _updateGalleryCount();
+  _autoSaveGallery();  // persist so view-switch doesn't lose results
+}
+
+function _genReplaceError(id, msg) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = 'gen-result-card';
+  el.innerHTML = `<div class="val-error">❌ ${escHtml(msg)}</div>`;
+}
+
+function _autoSaveGallery() {
+  const panel = $('genGalleryPanel');
+  if (panel && !panel.querySelector('.gen-gallery-empty')) {
+    window._genForm.galleryHTML = panel.innerHTML;
+  }
+}
+
+function clearGenGallery() {
+  _gen.gallery = [];
+  const panel = $('genGalleryPanel');
+  if (panel) panel.innerHTML = `<div class="gen-gallery-empty"><div class="gen-gallery-empty-icon">🖼️</div><div>생성된 이미지가 여기에 표시됩니다</div></div>`;
+  _updateGalleryCount();
+}
+
+function _updateGalleryCount() {
+  const el = $('genGalleryCount');
+  if (!el) return;
+  const n = _gen.gallery.length;
+  el.textContent = n ? `총 ${n}회 생성됨` : '생성된 이미지 없음';
 }
 
 // ── Lightbox ─────────────────────────────────────────────────────────────────

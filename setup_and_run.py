@@ -117,7 +117,43 @@ if not is_importable("onnxruntime"):
     if not ok:
         pip_install("onnxruntime")
 
-# ── 6. kohya-sd-scripts ──────────────────────────────────────────────────────
+# ── 6. xformers ─────────────────────────────────────────────────────────────
+section("xformers 확인")
+xformers_ok = is_importable("xformers")
+if not xformers_ok:
+    print("  xformers 없음 - 설치 시도 중...")
+    # torch 버전 확인해서 맞는 xformers 설치
+    torch_ver_r = run([str(VENV_PY), "-c",
+        "import torch; print(torch.__version__)"],
+        capture_output=True, text=True)
+    torch_ver = torch_ver_r.stdout.strip() if torch_ver_r.returncode == 0 else ""
+    print(f"  PyTorch: {torch_ver}")
+
+    # CUDA 버전 감지 (torch 문자열에서)
+    xf_index = None
+    if "cu128" in torch_ver:
+        xf_index = "https://download.pytorch.org/whl/cu128"
+    elif "cu121" in torch_ver:
+        xf_index = "https://download.pytorch.org/whl/cu121"
+    elif "cu118" in torch_ver:
+        xf_index = "https://download.pytorch.org/whl/cu118"
+    elif "cu" in torch_ver:
+        # 그 외 CUDA 버전은 pip 자동 선택
+        xf_index = None
+
+    ok = False
+    if xf_index:
+        ok = pip_install("xformers", "--index-url", xf_index)
+    if not ok:
+        ok = pip_install("xformers")  # fallback: pip 자동 선택
+    if ok:
+        print("  xformers 설치 완료 ✓")
+    else:
+        print("  [WARN] xformers 설치 실패 - attention slicing으로 대체됩니다")
+else:
+    print("  OK")
+
+# ── 8. kohya-sd-scripts ──────────────────────────────────────────────────────
 section("kohya-sd-scripts 확인")
 kohya = HERE / "kohya-sd-scripts"
 if not (kohya / "train_network.py").exists():
@@ -138,7 +174,7 @@ if not (kohya / "train_network.py").exists():
 else:
     print("  OK")
 
-# ── 7. 서버 시작 ─────────────────────────────────────────────────────────────
+# ── 9. 서버 시작 ─────────────────────────────────────────────────────────────
 print()
 print("=" * 40)
 print("  모든 의존성 OK")

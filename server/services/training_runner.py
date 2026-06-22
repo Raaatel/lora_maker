@@ -78,9 +78,14 @@ def run(
             "--resolution", f"{resolution},{resolution}",
             "--max_train_epochs", str(train_cfg.get("num_epochs", 10)),
             "--train_batch_size", str(train_cfg.get("train_batch_size", 1)),
-            "--network_module", "networks.lora",
+            "--network_module", str(train_cfg.get("network_module", "networks.lora")),
             "--network_dim", str(train_cfg.get("lora_rank", 32)),
             "--network_alpha", str(train_cfg.get("lora_alpha", 16)),
+        ]
+        # LyCORIS / custom network_args
+        for arg in train_cfg.get("network_args", []):
+            cmd.extend(["--network_args", str(arg)])
+        cmd += [
             "--gradient_accumulation_steps", str(train_cfg.get("gradient_accumulation_steps", 1)),
             "--max_grad_norm", str(train_cfg.get("max_grad_norm", 1.0)),
             "--mixed_precision", train_cfg.get("mixed_precision", "fp16"),
@@ -154,6 +159,8 @@ def run(
             cmd.append("--shuffle_caption")
         if train_cfg.get("keep_tokens", 1):
             cmd.extend(["--keep_tokens", str(train_cfg["keep_tokens"])])
+        if train_cfg.get("caption_dropout_rate"):
+            cmd.extend(["--caption_dropout_rate", str(train_cfg["caption_dropout_rate"])])
 
         if train_cfg.get("clip_skip", 1) > 1:
             cmd.extend(["--clip_skip", str(train_cfg["clip_skip"])])

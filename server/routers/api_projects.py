@@ -26,6 +26,7 @@ class ProjectCreate(BaseModel):
     base_model: str
     gpu_mode: str = "local"
     config_overrides: dict = {}
+    custom_overrides: dict = {}
 
 
 class ProjectUpdate(BaseModel):
@@ -41,6 +42,10 @@ async def create_project(body: ProjectCreate):
     for subdir in ("raw", "processed", "captions", "output", "thumbnails"):
         (job_dir / subdir).mkdir(parents=True, exist_ok=True)
 
+    merged_overrides = {**(body.config_overrides or {})}
+    if body.custom_overrides:
+        from server.services.config_builder import _deep_merge as _dm
+        merged_overrides = _dm(merged_overrides, body.custom_overrides)
     config = build_config(
         lora_type=body.lora_type,
         trigger_word=body.trigger_word,
@@ -48,7 +53,7 @@ async def create_project(body: ProjectCreate):
         job_dir=str(job_dir),
         lora_name=body.name.replace(" ", "_"),
         gpu_mode=body.gpu_mode,
-        overrides=body.config_overrides or {},
+        overrides=merged_overrides,
     )
 
     project = await db.create_project(
