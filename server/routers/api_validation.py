@@ -59,8 +59,12 @@ _cache: dict = {}
 
 
 @_project_router.get("/weight/{epoch}")
-async def validate_weight(project_id: str, epoch: int):
+async def validate_weight(project_id: str, epoch: str):
     """Fast weight analysis for a specific checkpoint epoch."""
+    # Guard: epoch must be numeric
+    if not epoch.lstrip('-').isdigit():
+        raise HTTPException(status_code=422, detail=f"epoch must be an integer, got '{epoch}'")
+    epoch = int(epoch)  # type: ignore
     project = await db.get_project(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")

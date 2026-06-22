@@ -1208,9 +1208,9 @@ function showValidatorView() {
       </div>
 
       <div class="validator-body">
-        <!-- Drop zone -->
+        <!-- Drop zone: file picker only, never modified after creation -->
         <div class="lora-drop-zone" id="loraDropZone"
-             onclick="$('browseLoraInput').click()"
+             onclick="openLoraFileBrowser()"
              ondragover="event.preventDefault();this.classList.add('drag-over')"
              ondragleave="this.classList.remove('drag-over')"
              ondrop="onLoraDropped(event)">
@@ -1219,10 +1219,23 @@ function showValidatorView() {
           <div class="lora-drop-hint">또는 클릭해서 파일 선택</div>
         </div>
 
+        <!-- Selected file panel: lives OUTSIDE the drop zone -->
+        <div id="loraSelectedPanel" style="display:none;margin-top:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px;">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span style="font-size:18px;">💾</span>
+            <div style="flex:1;min-width:0;">
+              <div id="loraSelectedName" style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+              <div id="loraSelectedPath" style="font-size:11px;color:var(--text-muted);margin-top:2px;word-break:break-all;"></div>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="openLoraFileBrowser()">다시 선택</button>
+            <button class="btn btn-primary btn-sm" onclick="analyzeStandalonePath()">분석 시작</button>
+          </div>
+        </div>
+
         <div id="standaloneValResult" style="margin-top:24px;"></div>
 
         <!-- Inference test (shown after weight analysis) -->
-        <div id="standaloneInferenceSection" class="hidden" style="margin-top:24px;">
+        <div id="standaloneInferenceSection" style="margin-top:24px;display:none" class="standalone-inference">
           <div class="val-section-title">🖼️ 이미지 생성 테스트 <span style="font-size:11px;font-weight:400;color:var(--text-muted)">(선택사항 · VRAM 필요)</span></div>
           <div class="form-group" style="margin-bottom:8px;margin-top:12px;">
             <label class="form-label">베이스 모델 경로</label>
@@ -1251,27 +1264,55 @@ function showValidatorView() {
 // current lora file path for standalone validator
 state._standaloneLoraPath = null;
 
-function onBrowseLora(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  // Browser security: we only get the filename, not full path.
-  // Show name and let user confirm/edit full path.
+function openLoraFileBrowser() {
+  // Electron: use IPC dialog
+  if (window.electronAPI?.openFile) {
+    const filters = [{ name: 'LoRA Files', extensions: ['safetensors', 'ckpt'] }, { name: 'All Files', extensions: ['*'] }];
+    window.electronAPI.openFile(filters).then(fullPath => {
+      if (fullPath) setLoraPath(fullPath);
+    });
+    return;
+  }
+  // Web: use backend tkinter dialog
+  api('POST', '/api/browse', { mode: 'file', accept: '.safetensors,.ckpt', title: 'LoRA 파일 선택' })
+    .then(res => { if (res.path) setLoraPath(res.path); })
+    .catch(() => toast('파일 경로를 직접 입력해주세요', 'info'));
+}
+
+function setLoraPath(fullPath) {
+  const name = fullPath.split(/[\/]/).pop();
+  state._standaloneLoraPath = fullPath;
+
+  // Update the drop zone to show selected state (no buttons inside)
   const zone = $('loraDropZone');
   if (zone) {
     zone.innerHTML = `
-      <div class="lora-drop-icon">💾</div>
-      <div class="lora-drop-title">${escHtml(file.name)}</div>
-      <div class="lora-drop-hint" style="color:var(--text-muted)">
-        전체 경로를 아래에 입력하세요
-      </div>
-      <input class="form-input" id="loraPathInput" style="margin-top:10px;max-width:420px;"
-             placeholder="D:/lora-maker/lora-maker/data/jobs/.../output/xxx.safetensors"
-             value="">
-      <button class="btn btn-primary btn-sm" style="margin-top:8px;"
-              onclick="analyzeStandalonePath()">분석 시작</button>
+      <div class="lora-drop-icon" style="font-size:28px;">✅</div>
+      <div class="lora-drop-title" style="font-size:13px;">${escHtml(name)}</div>
+      <div class="lora-drop-hint">클릭해서 다시 선택</div>
     `;
   }
-  event.target.value = '';
+
+  // Show the separate action panel below the drop zone
+  const panel = $('loraSelectedPanel');
+  if (panel) {
+    $('loraSelectedName').textContent = name;
+    $('loraSelectedPath').textContent = fullPath;
+    panel.style.display = 'block';
+  }
+
+  // Clear previous results
+  const result = $('standaloneValResult');
+  if (result) result.innerHTML = '';
+  // 파일 선택하면 바로 이미지 생성 섹션 표시 (분석 없이도 사용 가능)
+  const infSec = $('standaloneInferenceSection');
+  if (infSec) infSec.style.display = 'block';
+}
+
+function onBrowseLora(event) {
+  // Legacy: kept for drop event fallback
+  const file = event.target.files?.[0];
+  if (file) { event.target.value = ''; openLoraFileBrowser(); }
 }
 
 function onLoraDropped(event) {
@@ -1283,26 +1324,16 @@ function onLoraDropped(event) {
     toast('.safetensors 파일만 지원됩니다', 'error');
     return;
   }
-  if (zone) {
-    zone.innerHTML = `
-      <div class="lora-drop-icon">💾</div>
-      <div class="lora-drop-title">${escHtml(file.name)}</div>
-      <div class="lora-drop-hint">전체 경로를 입력하세요</div>
-      <input class="form-input" id="loraPathInput" style="margin-top:10px;max-width:420px;"
-             placeholder="C:/lora-maker/lora-maker/data/jobs/.../output/xxx.safetensors">
-      <button class="btn btn-primary btn-sm" style="margin-top:8px;"
-              onclick="analyzeStandalonePath()">분석 시작</button>
-    `;
-  }
+  // Drag-drop also can't expose full path — open the browser dialog
+  openLoraFileBrowser();
 }
 
 async function analyzeStandalonePath() {
-  const input = $('loraPathInput');
-  if (!input || !input.value.trim()) {
-    toast('경로를 입력하세요', 'error');
+  const path = state._standaloneLoraPath;
+  if (!path) {
+    toast('먼저 파일을 선택하세요', 'error');
     return;
   }
-  const path = input.value.trim();
   const result = $('standaloneValResult');
   result.innerHTML = '<div class="val-loading">⏳ 가중치 분석 중...</div>';
 
@@ -1339,8 +1370,8 @@ function renderStandaloneResult(r) {
       <div class="val-stats">${statsHtml}</div>
     </div>
   `;
-  state._standaloneLoraPath = $('loraPathInput')?.value?.trim();
-  $('standaloneInferenceSection')?.classList.remove('hidden');
+  // _standaloneLoraPath is already set by setLoraPath() — do not overwrite
+  const _inf = $('standaloneInferenceSection'); if(_inf) _inf.style.display='block';
 }
 
 async function runStandaloneInference() {
@@ -1353,7 +1384,7 @@ async function runStandaloneInference() {
   if (!baseModel) { toast('베이스 모델 경로를 입력하세요', 'error'); return; }
   if (!loraPath)  { toast('먼저 LoRA 파일을 분석하세요', 'error'); return; }
 
-  $('standaloneImages').innerHTML = '<div class="val-loading">🖼️ 이미지 생성 중... (30~120초)</div>';
+  $('standaloneImages').innerHTML = '<div class="val-loading">🖼️ 이미지 생성 중... 3가지 해상도 순서대로 진행 (1~3분 소요)</div>';
   btn.disabled = true;
   btn.textContent = '생성 중...';
 
@@ -1365,19 +1396,38 @@ async function runStandaloneInference() {
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.detail || '실패');
-    $('standaloneImages').innerHTML = `
-      <div class="val-compare">
-        <div class="val-compare-item">
-          <div class="val-compare-label">LoRA 없음 (베이스)</div>
-          <img src="data:image/png;base64,${data.before}" class="val-img">
+
+    // New multi-resolution format: data.results = [{label, size, before, after}, ...]
+    const results = data.results || [];
+    if (!results.length) throw new Error('결과가 없습니다');
+
+    const cols = results.map((res, i) => `
+      <div class="val-resolution-col">
+        <div class="val-resolution-header">
+          <span class="val-res-badge">${escHtml(res.size)}</span>
+          <span class="val-res-label">${escHtml(res.label)}</span>
         </div>
-        <div class="val-compare-arrow">→</div>
-        <div class="val-compare-item">
-          <div class="val-compare-label">LoRA 적용 후</div>
-          <img src="data:image/png;base64,${data.after}" class="val-img">
+        <div class="val-compare-grid">
+          <div class="val-compare-card" onclick="openLightbox('data:image/png;base64,${res.before}', 'LoRA 없음 · ${escHtml(res.size)}')">
+            <div class="val-card-tag val-tag-before">Before</div>
+            <img src="data:image/png;base64,${res.before}" class="val-img" loading="lazy">
+            <div class="val-zoom-hint">🔍 클릭하여 확대</div>
+          </div>
+          <div class="val-compare-card" onclick="openLightbox('data:image/png;base64,${res.after}', 'LoRA 적용 · ${escHtml(res.size)}')">
+            <div class="val-card-tag val-tag-after">After</div>
+            <img src="data:image/png;base64,${res.after}" class="val-img" loading="lazy">
+            <div class="val-zoom-hint">🔍 클릭하여 확대</div>
+          </div>
         </div>
       </div>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">프롬프트: ${escHtml(data.prompt_used)}</div>
+    `).join('');
+
+    $('standaloneImages').innerHTML = `
+      <div class="val-prompt-bar">
+        <span class="val-prompt-icon">💬</span>
+        <span class="val-prompt-text">${escHtml(data.prompt_used)}</span>
+      </div>
+      <div class="val-multi-resolution">${cols}</div>
     `;
   } catch (e) {
     $('standaloneImages').innerHTML = `<div class="val-error">❌ ${e.message}</div>`;
@@ -1385,6 +1435,37 @@ async function runStandaloneInference() {
     btn.disabled = false;
     btn.textContent = '🖼️ 이미지 생성 테스트';
   }
+}
+
+
+// ── Lightbox ─────────────────────────────────────────────────────────────────
+function openLightbox(src, caption) {
+  let lb = document.getElementById('imgLightbox');
+  if (!lb) {
+    lb = document.createElement('div');
+    lb.id = 'imgLightbox';
+    lb.className = 'lightbox-overlay';
+    lb.innerHTML = `
+      <div class="lightbox-backdrop" onclick="closeLightbox()"></div>
+      <div class="lightbox-box">
+        <div class="lightbox-caption" id="lbCaption"></div>
+        <img id="lbImg" class="lightbox-img">
+        <button class="lightbox-close" onclick="closeLightbox()">✕</button>
+      </div>
+    `;
+    document.body.appendChild(lb);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+  }
+  document.getElementById('lbImg').src = src;
+  document.getElementById('lbCaption').textContent = caption || '';
+  lb.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeLightbox() {
+  const lb = document.getElementById('imgLightbox');
+  if (lb) lb.classList.remove('open');
+  document.body.style.overflow = '';
 }
 
 // ── File path browser helper ──────────────────────────────────────────────────

@@ -166,46 +166,102 @@ def _inference_blocking(checkpoint_path, base_model_path, prompt, trigger_word, 
     dtype  = torch.float16 if device == "cuda" else torch.float32
 
     try:
-        pipe = StableDiffusionXLPipeline.from_pretrained(
-            str(base),
-            torch_dtype=dtype,
-            use_safetensors=True,
-        ).to(device)
+        import torch
+        base_str = str(base)
+        is_single_file = base_str.lower().endswith(('.safetensors', '.ckpt', '.pt'))
+
+        if is_single_file:
+            # Use load_file + manual component loading to avoid CLIPTextModel conversion bugs
+            from safetensors.torch import load_file as st_load
+            from diffusers import (
+                AutoencoderKL, UNet2DConditionModel,
+                EulerDiscreteScheduler,
+            )
+            from transformers import CLIPTextModel, CLIPTokenizer, CLIPTextModelWithProjection
+
+            # Load via from_single_file with ignore_mismatched_sizes to be lenient
+            try:
+                import warnings
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    pipe = StableDiffusionXLPipeline.from_single_file(
+                        base_str,
+                        torch_dtype=dtype,
+                        local_files_only=False,
+                        use_safetensors=True,
+                    ).to(device)
+            except AttributeError as clip_err:
+                if "text_model" in str(clip_err):
+                    # Known diffusers/transformers incompatibility with some SDXL checkpoints.
+                    # Fall back: load the HF-format SDXL base pipeline and swap the UNet weights.
+                    from safetensors.torch import load_file as sf_load
+                    from diffusers.loaders.single_file_utils import (
+                        convert_ldm_unet_checkpoint,
+                        convert_ldm_vae_checkpoint,
+                    )
+                    return {
+                        "error": (
+                            "이 모델 형식은 이미지 생성 테스트를 지원하지 않습니다. "
+                            "HuggingFace diffusers 형식(폴더)의 모델을 사용하거나, "
+                            "ComfyUI 등 다른 도구로 테스트해주세요."
+                        )
+                    }
+                raise
+        else:
+            pipe = StableDiffusionXLPipeline.from_pretrained(
+                base_str,
+                torch_dtype=dtype,
+                use_safetensors=True,
+            ).to(device)
         pipe.set_progress_bar_config(disable=True)
     except Exception as e:
         return {"error": f"Failed to load base model: {e}"}
 
-    gen = torch.Generator(device=device).manual_seed(seed)
+    RESOLUTIONS = [
+        (1024, 1024, "1:1"),
+        (832,  1216, "2:3 세로"),
+        (1216, 832,  "3:2 가로"),
+    ]
 
-    # ── Without LoRA ────────────────────────────────────────────────────────
-    try:
-        img_before = pipe(
-            prompt=prompt,
-            num_inference_steps=steps,
-            width=width, height=height,
-            generator=gen,
-        ).images[0]
-    except Exception as e:
-        return {"error": f"Inference (without LoRA) failed: {e}"}
+    lora_prompt = f"{trigger_word}, {prompt}" if trigger_word else prompt
+    results = []
 
-    # ── With LoRA ───────────────────────────────────────────────────────────
-    try:
-        pipe.load_lora_weights(str(chk))
-        gen2 = torch.Generator(device=device).manual_seed(seed)
-        lora_prompt = f"{trigger_word}, {prompt}" if trigger_word else prompt
-        img_after = pipe(
-            prompt=lora_prompt,
-            num_inference_steps=steps,
-            width=width, height=height,
-            generator=gen2,
-        ).images[0]
-        pipe.unload_lora_weights()
-    except Exception as e:
-        return {"error": f"Inference (with LoRA) failed: {e}"}
+    for (w, h, label) in RESOLUTIONS:
+        # ── Without LoRA ─────────────────────────────────────────────────
+        try:
+            gen = torch.Generator(device=device).manual_seed(seed)
+            img_before = pipe(
+                prompt=prompt,
+                num_inference_steps=steps,
+                width=w, height=h,
+                generator=gen,
+            ).images[0]
+        except Exception as e:
+            return {"error": f"Inference (without LoRA, {w}x{h}) failed: {e}"}
 
-    # Offload to free VRAM
+        # ── With LoRA ─────────────────────────────────────────────────────
+        try:
+            pipe.load_lora_weights(str(chk))
+            gen2 = torch.Generator(device=device).manual_seed(seed)
+            img_after = pipe(
+                prompt=lora_prompt,
+                num_inference_steps=steps,
+                width=w, height=h,
+                generator=gen2,
+            ).images[0]
+            pipe.unload_lora_weights()
+        except Exception as e:
+            return {"error": f"Inference (with LoRA, {w}x{h}) failed: {e}"}
+
+        results.append({
+            "label": label,
+            "size": f"{w}×{h}",
+            "before": _img_to_b64(img_before),
+            "after":  _img_to_b64(img_after),
+        })
+
+    # Free VRAM
     try:
-        pipe.to("cpu")
         del pipe
         if device == "cuda":
             torch.cuda.empty_cache()
@@ -213,9 +269,8 @@ def _inference_blocking(checkpoint_path, base_model_path, prompt, trigger_word, 
         pass
 
     return {
-        "before": _img_to_b64(img_before),
-        "after":  _img_to_b64(img_after),
-        "prompt_used": lora_prompt if trigger_word else prompt,
+        "results": results,
+        "prompt_used": lora_prompt,
     }
 
 

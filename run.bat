@@ -1,36 +1,25 @@
 @echo off
 title LoRA Maker
+chcp 65001 >nul
 echo.
-echo  LoRA Maker - Starting...
+echo  LoRA Maker
 echo  ================================
 echo.
 
 cd /d "%~dp0"
 
-if not exist "venv\Scripts\python.exe" (
-    echo [ERROR] venv\Scripts\python.exe not found
-    echo         Run install.py first!
-    echo.
+REM Python 있는지 확인
+python --version >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Python not found. Install Python 3.10+ from https://python.org
     pause
     exit /b 1
 )
 
-if not exist "app.py" (
-    echo [ERROR] app.py not found
-    echo         Make sure you are running from the lora-maker folder.
-    echo         Current folder: %CD%
-    echo.
-    pause
-    exit /b 1
-)
-
-echo  Open browser: http://localhost:7860
-echo  Press Ctrl+C to stop
-echo.
-
-venv\Scripts\python.exe app.py
+REM 의존성 설치 및 서버 시작
+python setup_and_run.py
 if errorlevel 1 (
     echo.
-    echo [ERROR] App crashed - see error above
+    echo [ERROR] 오류가 발생했습니다. 위 메시지를 확인하세요.
     pause
 )

@@ -83,14 +83,70 @@ VENV_PIP = VENV / "Scripts" / "pip"
 run([str(VENV_PY), "-m", "pip", "install", "--upgrade", "pip", "--quiet"])
 
 # ── PyTorch ─────────────────────────────────────────────
-section("3/5  Installing PyTorch (CUDA 12.1)")
-print("  This can take 5-10 minutes depending on your connection...")
+section("3/5  Installing PyTorch (GPU auto-detect)")
+print("  Detecting GPU...")
+
+def get_compute_capability():
+    """Return (major, minor) compute capability, or None if no NVIDIA GPU."""
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            cap = result.stdout.strip().split("\n")[0].strip()
+            if cap:
+                major, minor = cap.split(".")
+                return int(major), int(minor)
+    except Exception:
+        pass
+    return None
+
+def get_torch_index_url():
+    """Pick the right wheel index for the detected GPU."""
+    cap = get_compute_capability()
+    if cap is None:
+        print("  [INFO] No NVIDIA GPU detected — installing CPU PyTorch")
+        return None, "cpu"
+    major, minor = cap
+    sm = major * 10 + minor
+    gpu_str = f"sm_{sm}"
+    print(f"  [INFO] Detected GPU compute capability: {gpu_str}")
+
+    if sm >= 120:
+        # Blackwell (RTX 50xx) — needs CUDA 12.8 + PyTorch 2.6+
+        print("  [INFO] Blackwell GPU (RTX 50xx) detected → CUDA 12.8 / PyTorch 2.6+")
+        return "https://download.pytorch.org/whl/cu128", "cu128"
+    elif sm >= 89:
+        # Ada Lovelace / Hopper (RTX 40xx, H100) — CUDA 12.1
+        print("  [INFO] Ada/Hopper GPU detected → CUDA 12.1")
+        return "https://download.pytorch.org/whl/cu121", "cu121"
+    elif sm >= 80:
+        # Ampere (RTX 30xx, A100) — CUDA 12.1
+        print("  [INFO] Ampere GPU detected → CUDA 12.1")
+        return "https://download.pytorch.org/whl/cu121", "cu121"
+    elif sm >= 75:
+        # Turing (RTX 20xx, GTX 16xx) — CUDA 12.1
+        print("  [INFO] Turing GPU detected → CUDA 12.1")
+        return "https://download.pytorch.org/whl/cu121", "cu121"
+    else:
+        print(f"  [INFO] Older GPU (sm_{sm}) → CUDA 11.8")
+        return "https://download.pytorch.org/whl/cu118", "cu118"
+
+index_url, cuda_tag = get_torch_index_url()
+torch_pkg = "torch>=2.6.0" if cuda_tag == "cu128" else "torch>=2.1.0"
+torchvision_pkg = "torchvision>=0.21.0" if cuda_tag == "cu128" else "torchvision>=0.16.0"
+
+print(f"  Installing PyTorch for {cuda_tag}... (5-10 min)")
 try:
-    pip("install", "torch", "torchvision",
-        "--index-url", "https://download.pytorch.org/whl/cu121", "--quiet")
-    print("[OK] PyTorch (CUDA) installed")
+    if index_url:
+        pip("install", torch_pkg, torchvision_pkg,
+            "--index-url", index_url, "--quiet")
+    else:
+        pip("install", torch_pkg, torchvision_pkg, "--quiet")
+    print(f"[OK] PyTorch ({cuda_tag}) installed")
 except subprocess.CalledProcessError:
-    print("[WARN] CUDA build failed, installing CPU version...")
+    print("[WARN] GPU build failed, falling back to CPU PyTorch...")
     pip("install", "torch", "torchvision", "--quiet")
     print("[OK] PyTorch (CPU) installed")
 
@@ -99,7 +155,7 @@ section("4/5  Installing dependencies")
 groups = [
     ["fastapi", "uvicorn[standard]", "jinja2", "aiofiles", "aiosqlite",
      "python-multipart", "websockets", "pyyaml"],
-    ["diffusers", "transformers", "accelerate", "safetensors", "peft", "bitsandbytes"],
+    ["diffusers>=0.28.0", "transformers>=4.40.0", "accelerate", "safetensors", "peft", "bitsandbytes"],
     ["opencv-python", "Pillow", "tqdm", "numpy", "huggingface-hub",
      "timm", "pandas", "psutil", "toml", "einops", "imagesize"],
 ]
