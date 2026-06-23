@@ -105,8 +105,8 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
-pip install diffusers transformers accelerate safetensors peft bitsandbytes --quiet
-pip install opencv-python Pillow tqdm numpy huggingface-hub timm pandas psutil toml einops imagesize --quiet
+pip install diffusers transformers accelerate safetensors peft bitsandbytes lycoris-lora --quiet
+pip install opencv-python Pillow tqdm numpy huggingface-hub timm pandas psutil toml einops imagesize voluptuous datasets matplotlib --quiet
 pip install onnxruntime-gpu --quiet 2>nul
 if errorlevel 1 (
     pip install onnxruntime --quiet

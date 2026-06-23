@@ -1,6 +1,5 @@
 # 복사형 그림체 LoRA - 체크포인트 영향 최소화, 최강 스타일 복사
-# rank 32, conv_dim 16, alpha=rank → 최대 강도
-# TE 저LR 학습 → 트리거워드에 스타일 강하게 묶임
+# LoCon 고rank, alpha=rank, TE 끔, 캡션 단순화
 
 preprocess:
   skip_preprocess: true
@@ -15,13 +14,13 @@ training:
   network_module: "lycoris.kohya"
   network_args:
     - "algo=locon"
-    - "conv_dim=16"
-    - "conv_alpha=16"
-  lora_rank: 32
-  lora_alpha: 32             # alpha=rank → 최대 강도
+    - "conv_dim=64"
+    - "conv_alpha=64"
+  lora_rank: 128
+  lora_alpha: 128            # alpha=rank → 최대 강도
 
   unet_lr: 0.0008
-  text_encoder_lr: 0.00005   # TE 저LR → 트리거워드에 스타일 강하게 묶임
+  network_train_unet_only: true   # TE 끔
 
   num_epochs: 25
   target_steps: 5000
@@ -30,7 +29,7 @@ training:
   lr_scheduler_num_cycles: 4
   lr_warmup_steps: 250
 
-  caption_dropout_rate: 0.15
+  caption_dropout_rate: 0.2  # 스타일 학습 강화
   noise_offset: 0.1
   min_snr_gamma: 5
   shuffle_caption: true
