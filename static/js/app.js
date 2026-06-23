@@ -826,7 +826,7 @@ function buildStep1() {
       emoji: '⚖️',
       title: '균형형',
       desc: '스타일 강함 + 포즈·구도 제어 가능',
-      detail: 'LoCon · Rank 128 / Alpha 64 · conv 32 · TE 끔 · α/r=0.5',
+      detail: 'LoCon · Rank 32 / Alpha 16 · conv 8 · TE 끔 · α/r=0.5',
       tags: ['권장'],
     },
     {
@@ -834,7 +834,7 @@ function buildStep1() {
       emoji: '🔥',
       title: '복사형',
       desc: '체크포인트 영향 최소화, 최강 그림체 복사',
-      detail: 'LoCon · Rank 128 / Alpha 128 · conv 64 · TE 끔 · α/r=1.0',
+      detail: 'LoCon · Rank 64 / Alpha 64 · conv 32 · TE 포함(저LR) · α/r=1.0',
       tags: ['강력'],
     },
     {
