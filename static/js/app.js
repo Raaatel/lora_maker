@@ -834,7 +834,7 @@ function buildStep1() {
       emoji: '🔥',
       title: '복사형',
       desc: '체크포인트 영향 최소화, 최강 그림체 복사',
-      detail: 'LoCon · Rank 64 / Alpha 64 · conv 32 · TE 포함(저LR) · α/r=1.0',
+      detail: 'LoCon · Rank 32 / Alpha 32 · conv 16 · TE 포함(저LR) · α/r=1.0',
       tags: ['강력'],
     },
     {
