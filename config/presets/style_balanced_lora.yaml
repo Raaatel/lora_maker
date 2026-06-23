@@ -1,5 +1,5 @@
 # 균형형 그림체 LoRA - 스타일 강함 + 포즈/구도 제어 가능
-# LoCon (conv 포함), TE 학습 끔, alpha/dim=0.5
+# LoCon, rank 32, TE 학습 끔
 
 preprocess:
   skip_preprocess: true
@@ -8,16 +8,16 @@ preprocess:
 caption:
   method: "wd-tagger"
   wd_tagger_threshold: 0.30
-  exclude_tags: []           # 상세 캡션 유지 (스타일 묘사 태그만 수동 제거 권장)
+  exclude_tags: []
 
 training:
   network_module: "lycoris.kohya"
   network_args:
     - "algo=locon"
-    - "conv_dim=32"
-    - "conv_alpha=32"
-  lora_rank: 128
-  lora_alpha: 64             # alpha/rank = 0.5 → 스타일 강함, 베이스 제어력 유지
+    - "conv_dim=8"
+    - "conv_alpha=8"
+  lora_rank: 32
+  lora_alpha: 16             # alpha/rank = 0.5 → 스타일 강함, 베이스 제어력 유지
 
   unet_lr: 0.0005
   network_train_unet_only: true   # TE 학습 끔 → 프롬프트 제어력 유지
