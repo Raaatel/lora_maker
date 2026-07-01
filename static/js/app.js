@@ -750,7 +750,7 @@ function renderSettings(config) {
       <div class="settings-section-body">
         <div class="settings-grid">
           <div class="setting-item"><div class="setting-label">UNet LR</div><div class="setting-value">${t.unet_lr || '—'}</div></div>
-          <div class="setting-item"><div class="setting-label">Text Encoder LR</div><div class="setting-value">${t.network_train_unet_only ? '<span style="color:var(--text-dim)">끔</span>' : (Array.isArray(t.text_encoder_lr) ? t.text_encoder_lr[0] : (t.text_encoder_lr || '—'))}</div></div>
+          <div class="setting-item"><div class="setting-label">Text Encoder LR</div><div class="setting-value">${Array.isArray(t.text_encoder_lr) ? t.text_encoder_lr[0] : (t.text_encoder_lr || '—')}</div></div>
           <div class="setting-item"><div class="setting-label">스케줄러</div><div class="setting-value">${t.lr_scheduler || '—'}</div></div>
           <div class="setting-item"><div class="setting-label">사이클 수</div><div class="setting-value">${t.lr_scheduler_num_cycles || 1}</div></div>
         </div>
@@ -762,7 +762,7 @@ function renderSettings(config) {
       <div class="settings-section-body">
         <div class="settings-grid">
           <div class="setting-item"><div class="setting-label">에폭</div><div class="setting-value">${t.num_epochs || '—'}</div></div>
-          <div class="setting-item"><div class="setting-label">반복 횟수</div><div class="setting-value">${(()=>{const ic=state.project?.image_count||0;const ts=t.target_steps||2000;const ep=t.num_epochs||10;if(t.auto_num_repeats!==false&&ic>0&&ep>0){return Math.max(1,Math.min(Math.ceil(ts/(ic*ep)),50))+'<span style="font-size:11px;color:var(--text-dim)"> (자동계산)</span>';}return t.num_repeats||'—';})()}</div></div>
+          <div class="setting-item"><div class="setting-label">반복 횟수</div><div class="setting-value">${t.num_repeats || '—'} <span style="font-size:11px;color:var(--text-dim)">(자동 계산)</span></div></div>
           <div class="setting-item"><div class="setting-label">Min SNR Gamma</div><div class="setting-value">${t.min_snr_gamma || '—'}</div></div>
           <div class="setting-item"><div class="setting-label">Noise Offset</div><div class="setting-value">${t.noise_offset || '—'}</div></div>
           <div class="setting-item"><div class="setting-label">해상도</div><div class="setting-value">${t.resolution || 1024}×${t.resolution || 1024}</div></div>
@@ -814,7 +814,7 @@ function renderWizardStep(step) {
 
 function buildStep1() {
   const types = [
-    { key: 'style', emoji: '🎨', title: '그림체', desc: '화풍·색감·선 스타일 복사. 프리셋 선택 가능', specs: ['균형형/복사형/기본형', '최소 30장+'] },
+    { key: 'style', emoji: '🎨', title: '그림체', desc: '화풍·색감·선 스타일 복사. 프리셋 선택 가능', specs: ['LoCon', 'TE 끔', '최소 30장+'] },
     { key: 'character', emoji: '👤', title: '캐릭터', desc: '특정 캐릭터의 외형과 의상을 학습', specs: ['Rank 32', 'TE 포함', '10 에폭', '최소 20장+'] },
     { key: 'face', emoji: '😊', title: '얼굴', desc: '특정 인물의 얼굴 특징을 세밀하게 학습', specs: ['Rank 16', '얼굴 크롭', '10 에폭', '최소 15장+'] },
     { key: 'object', emoji: '📦', title: '사물/개념', desc: '특정 오브젝트, 아이템, 개념을 학습', specs: ['Rank 32', '전체 이미지', '10 에폭', '최소 10장+'] },
@@ -826,7 +826,7 @@ function buildStep1() {
       emoji: '⚖️',
       title: '균형형',
       desc: '스타일 강함 + 포즈·구도 제어 가능',
-      detail: 'LoCon · Rank 32 / Alpha 16 · conv 8 · TE 끔 · α/r=0.5',
+      detail: 'LoCon · Rank 128 / Alpha 64 · conv 32 · TE 끔 · α/r=0.5',
       tags: ['권장'],
     },
     {
@@ -834,7 +834,7 @@ function buildStep1() {
       emoji: '🔥',
       title: '복사형',
       desc: '체크포인트 영향 최소화, 최강 그림체 복사',
-      detail: 'LoCon · Rank 32 / Alpha 32 · conv 16 · TE 포함(저LR) · α/r=1.0',
+      detail: 'LoCon · Rank 128 / Alpha 128 · conv 64 · TE 끔 · α/r=1.0',
       tags: ['강력'],
     },
     {
