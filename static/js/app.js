@@ -814,7 +814,7 @@ function renderWizardStep(step) {
 
 function buildStep1() {
   const types = [
-    { key: 'style', emoji: '🎨', title: '그림체', desc: '화풍·색감·선 스타일 복사. 프리셋 선택 가능', specs: ['LoCon', 'TE 끔', '최소 30장+'] },
+    { key: 'style', emoji: '🎨', title: '그림체', desc: '화풍·색감·선 스타일 복사. 프리셋 선택 가능', specs: ['균형형/복사형/기본형', '최소 30장+'] },
     { key: 'character', emoji: '👤', title: '캐릭터', desc: '특정 캐릭터의 외형과 의상을 학습', specs: ['Rank 32', 'TE 포함', '10 에폭', '최소 20장+'] },
     { key: 'face', emoji: '😊', title: '얼굴', desc: '특정 인물의 얼굴 특징을 세밀하게 학습', specs: ['Rank 16', '얼굴 크롭', '10 에폭', '최소 15장+'] },
     { key: 'object', emoji: '📦', title: '사물/개념', desc: '특정 오브젝트, 아이템, 개념을 학습', specs: ['Rank 32', '전체 이미지', '10 에폭', '최소 10장+'] },
